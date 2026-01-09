@@ -1,0 +1,261 @@
+LLM CONTEXT FILE (for implementation)
+Topic: Best-of-K / Max@K objectives + (un)biased, variance-reduced policy gradients for RL4CO / neural combinatorial optimization
+
+Why you’re reading this:
+Humans love evaluating a model by sampling K solutions and taking the best one… and then training it as if they cared about the average. This file summarizes the closest related work so you can (a) understand what they did and (b) implement something principled that directly optimizes “best-of-K”.
+
+------------------------------------------------------------------------------
+0) QUICK GLOSSARY (keep notation consistent in code)
+------------------------------------------------------------------------------
+• Policy π_θ(τ | s): distribution over full solution trajectories τ for a CO instance/state s.
+• Reward R(τ): scalar quality of a trajectory. In routing papers it’s often negative tour length or (−cost).
+• Standard (risk-neutral) objective:
+    J(θ) = E_{τ~π_θ}[ R(τ) ].
+• Max@K (risk-seeking, “best-of-K”) objective:
+    J_maxK(θ) = E_{τ1..τK i.i.d.~π_θ}[ max_i R(τi) ].
+• Pass@K (binary rewards): probability at least one success among K samples.
+
+Core trap (“hitchhiking”):
+If you draw K samples, observe max reward, and then reinforce *all* samples (or use the max as a shared signal),
+you accidentally reward garbage samples that co-occurred with one good sample. That creates biased gradients and
+often slows learning.
+
+------------------------------------------------------------------------------
+1) REINFORCE (Williams 1992): the base tool everyone builds on
+------------------------------------------------------------------------------
+What it does:
+• Uses the log-derivative trick:
+    ∇_θ E_{τ}[R(τ)] = E_{τ}[ R(τ) ∇_θ log π_θ(τ) ].
+• Add a baseline b(s) that does not depend on τ to reduce variance without bias:
+    E[(R(τ) − b(s)) ∇ log π(τ)] is still unbiased.
+
+Why it matters here:
+• Any Max@K estimator you design is basically “REINFORCE but with a smarter per-sample weight”.
+
+Reference:
+• Williams, “Simple statistical gradient-following algorithms…” (1992). (REINFORCE) citeturn14search3
+
+------------------------------------------------------------------------------
+2) Early Neural Combinatorial Optimization (Bello et al. 2017)
+------------------------------------------------------------------------------
+What they did:
+• Pointer Network policy for TSP etc., trained with policy gradient (REINFORCE).
+• At test time: sample multiple tours and take the best. (So evaluation is implicitly best-of-K.)
+• Training objective is still expected reward, not Max@K.
+
+Why it’s “close”:
+• It’s the origin of “train average, evaluate best-of-many” in NCO.
+
+Reference:
+• Bello et al., “Neural Combinatorial Optimization with Reinforcement Learning” (2017). citeturn14search0turn14search4
+
+------------------------------------------------------------------------------
+3) Attention Model / “Learn to Solve Routing Problems!” (Kool et al. 2019)
+------------------------------------------------------------------------------
+What they did:
+• Transformer-ish attention policy for routing (TSP/VRP/OP/PCTSP).
+• Train with REINFORCE + a deterministic greedy rollout baseline (self-critical style baseline).
+• At test time: sampling / beam-like search, pick best.
+
+Why it’s close:
+• Strong baseline code path: autoregressive decoder, logprob accumulation, rollout baseline.
+• Still risk-neutral objective during training.
+
+Reference:
+• Kool et al., “Attention, Learn to Solve Routing Problems!” (ICLR 2019). citeturn14search1turn14search17
+
+------------------------------------------------------------------------------
+4) POMO (Kwon et al., NeurIPS 2020)
+------------------------------------------------------------------------------
+Key idea:
+Exploit symmetry by forcing N parallel rollouts from different “starting nodes” (or perspectives). This gives:
+• Better exploration of multiple equivalent optima (e.g., cyclic shifts in TSP tours).
+• A *shared baseline* with low variance.
+
+Baseline + gradient (core equations):
+Given N trajectories {τ^1,…,τ^N} for the *same* instance s:
+    ∇θ J ≈ (1/N) Σ_i ( R(τ^i) − b_i(s) ) ∇θ log pθ(τ^i | s)
+POMO uses:
+    b_i(s) = b_shared(s) = (1/N) Σ_j R(τ^j)
+So each trajectory uses the mean reward across the group as baseline. citeturn12view0
+
+Why it’s close:
+• POMO is the canonical “multiple samples per instance” training setup in RL4CO.
+• But the objective is still expected reward (risk-neutral), not Max@K.
+
+Reference:
+• Kwon et al., “POMO: Policy Optimization with Multiple Optima…” (NeurIPS 2020). Shared baseline in Sec 4.2. citeturn12view0
+
+------------------------------------------------------------------------------
+5) Leader Reward (Wang et al., 2024): a simple “best-of-K” training hack
+------------------------------------------------------------------------------
+What they do:
+• Motivation: CO evaluation cares about the best solution among multiple attempts.
+• Modify the advantage: keep POMO baseline, then give an extra boost to the leader (best) trajectory.
+  Informally:
+    A_i = (R_i − mean_R) + α * I[i is leader] * (something positive)
+  The paper describes adding an “extra Leader Reward to the leader trajectory” with multiplier α, while still
+  using the average reward as baseline. citeturn4view0
+
+Why it’s close:
+• It is directly aimed at “best-of-many” behavior with nearly zero overhead.
+• It often works empirically.
+
+Why it’s NOT principled (the gap you can exploit):
+• It’s not derived as an unbiased estimator of ∇ J_maxK.
+• Credit assignment is heuristic: only the leader gets extra weight, regardless of how “marginally important”
+  it was to the Max@K objective.
+• Tuning α is task-dependent; too large can destabilize training.
+
+Reference:
+• Wang et al., “Leader Reward for POMO-Based Neural Combinatorial Optimization” (arXiv 2024). citeturn4view0
+
+------------------------------------------------------------------------------
+6) PKPO (Pass@K Policy Optimization, 2025): unbiased estimators for pass@k and maxg@k
+------------------------------------------------------------------------------
+This is one of the most directly relevant “principled math” relatives.
+
+Setup (their view):
+For each “task” x (think: one CO instance), sample n outputs {x1,…,xn} with rewards g(xi). Want to optimize:
+• pass@k for binary rewards (success/fail), or
+• maxg@k (continuous analog): expected max reward among k samples.
+
+6.1 Binary pass@k estimator (unbiased)
+If you have n ≥ k samples and c correct (binary reward = 1), the classic unbiased estimator is:
+    ρ(n,c,k) = 1 − C(n−c, k) / C(n, k).
+They cite this as an unbiased pass@k estimator and re-derive it to build gradient estimators. citeturn9view2
+
+6.2 Unbiased pass@k gradient estimator
+They give an unbiased policy-gradient estimator of ∇ pass@k that assigns different weights to correct vs incorrect
+samples (still encouraging exploration). See Eq (8) in the paper. citeturn9view2
+
+6.3 Continuous maxg@k (unbiased estimator + gradient)
+Let rewards be sorted ascending: g1 ≤ g2 ≤ … ≤ gn.
+Unbiased estimator of maxg@k:
+    ρ^(g)(n,k) = (1 / C(n,k)) Σ_{i=k..n} C(i−1, k−1) * g_i.  citeturn10view2
+They also provide a corresponding unbiased gradient estimator:
+    ∇̂^(g) = Σ_i s_i ∇θ log p(x_i | θ),
+where s_i is a weighted combination of rewards (Eq (19)-(21)) after sorting. citeturn10view2
+
+6.4 Variance reduction they care about
+• They discuss leave-one-out (LOO) baselines for maxg@k (Sec 4) to cut variance while keeping unbiasedness. citeturn10view2
+• They provide practical “drop-in reward transformations” (their terms) like sloo / sloo-minus-one to plug into any PG
+algorithm (see “How to Apply this Method”). citeturn9view2turn9view3
+• Computational note: sorting is O(n log n); they show additional terms can be computed efficiently (Theorem 5). citeturn10view0
+
+Why it’s close:
+• It’s literally about unbiased / low-variance gradients for best-of-k objectives.
+• It’s “task-level sampling” like RL4CO: multiple outputs for one input instance.
+
+References:
+• “Pass@K Policy Optimization: Solving Harder Reinforcement Learning Problems” (arXiv 2025). citeturn9view2turn10view2
+
+------------------------------------------------------------------------------
+7) RSPO (Risk-Seeking Policy Optimization, 2025): unbiased gradients for Pass@k and Max@k with “hitchhiking” fix
+------------------------------------------------------------------------------
+This is another extremely relevant relative, but written for LLM post-training.
+
+Main ideas:
+• Calls out mismatch: train risk-neutral expected reward, evaluate Pass@k / Max@k. citeturn7view0
+• Names the hitchhiking issue: low-reward samples get reinforced just because they were in the same K-set as a high one. citeturn7view0turn8view2
+• Derives a closed-form probability that a sample is the maximum among k draws, enabling per-sample gradient weights.
+
+Formal objective (they write it explicitly):
+    E_{y1..yk~πθ}[ max(R(x,y1),...,R(x,yk)) ] for Max@k. citeturn7view0
+
+Unbiased Max@k gradient estimator (important for coding):
+They provide an estimator using n ≥ k samples per input x, sort by reward
+R(x,y1) < ... < R(x,yn), then weight each sample i by combinatorial terms capturing its marginal contribution.
+See Theorem 4.4 / Eq (12) in the RSPO PDF for the exact implementable expression. citeturn8view2
+
+Why it’s close:
+• RSPO is explicitly about unbiased gradient weights for Max@k and Pass@k.
+• Their “marginal contribution” framing is exactly what you want in CO: don’t reward a sample unless it actually changes
+the max of a k-set.
+
+Reference:
+• Zhang et al., “RSPO: Risk-Seeking Policy Optimization for Pass@k and Max@k Metrics…” (arXiv 2025). citeturn7view0turn8view2
+
+------------------------------------------------------------------------------
+8) RL4CO (Berto et al., 2023): where you’ll likely implement it
+------------------------------------------------------------------------------
+What it is:
+• A unified benchmark / library covering many CO problems and RL methods.
+• Helps you avoid spending your life reinventing dataloaders and rollout code. citeturn13search0turn13search1
+
+Why it’s relevant:
+• Many RL4CO recipes already sample multiple solutions per instance (POMO-style).
+• That makes it a natural home for Max@K estimators (because you already have “n samples per instance”).
+
+Reference:
+• Berto et al., “RL4CO: an Extensive Reinforcement Learning for Combinatorial Optimization Benchmark” (arXiv 2023). citeturn13search0turn13search5
+
+------------------------------------------------------------------------------
+9) WHAT THESE PAPERS “DID” vs WHAT THEY DIDN’T (gap analysis for your project)
+------------------------------------------------------------------------------
+Risk-neutral training + best-of-K evaluation (Bello 2017, Kool 2019, POMO 2020):
+• DID: strong policies, variance-reducing baselines, multi-start exploration, inference-time sampling/augmentation.
+• DID NOT: train with an objective that matches “take the best of K”.
+
+Leader Reward (2024):
+• DID: explicitly push the leader sample during training with almost no overhead.
+• DID NOT: provide an unbiased (or systematically biased) estimator of ∇ J_maxK, so credit assignment is heuristic.
+
+PKPO (2025) + RSPO (2025):
+• DID: derive unbiased estimators/gradients for pass@k and max@k/maxg@k, plus variance reduction tricks.
+• DID NOT (for CO specifically):
+  - address structured autoregressive trajectories in NCO (they phrase in “samples x_i”, but it should carry over);
+  - integrate with POMO-style shared baselines / symmetry, or evaluate across RL4CO tasks as a coherent benchmark;
+  - provide CO-specific stability recipes (reward scaling, advantage normalization, entropy schedules, etc.) for long-horizon
+    combinatorial rollouts.
+
+------------------------------------------------------------------------------
+10) CODING TRANSLATION: mapping “LLM pass@k” math to RL4CO / NCO rollouts
+------------------------------------------------------------------------------
+You can treat each full solution trajectory τ_i as one “sample” x_i in PKPO/RSPO:
+• x = CO instance (graph, VRP instance, etc.)
+• x_i / y_i = one sampled solution τ_i ~ π_θ(.|x)
+• g(x_i) / R(x,y_i) = scalar reward for that solution (e.g., −tour_length)
+
+Then implement per-instance:
+1) Sample n solutions for the same instance (n is your rollout multiplicity, e.g., POMO N starts + maybe extra sampling).
+2) Compute rewards r_i.
+3) Sort by r_i (ascending) if using combinatorial weight formulas.
+4) Compute per-sample weights w_i that approximate the marginal contribution to max@k:
+   - PKPO provides s_i for maxg@k (Eq 19-21) and LOO baselines for variance reduction. citeturn10view2
+   - RSPO provides an explicit unbiased Max@k gradient estimator (Theorem 4.4). citeturn8view2
+5) Backprop:
+    loss = − Σ_i w_i * logprob(τ_i)
+   (plus whatever entropy/KL regularization your framework uses).
+
+Important nuance:
+• In NCO, logprob(τ_i) is a sum over time steps: log π(a_t | state_t).
+  That’s fine: ∇ log π(τ_i) works exactly like in REINFORCE.
+
+------------------------------------------------------------------------------
+11) Minimal “reading order” (if you want to implement without melting your brain)
+------------------------------------------------------------------------------
+1) POMO shared baseline (understand how RL4CO produces multiple trajectories per instance). citeturn12view0
+2) Leader Reward (understand the heuristic baseline you must beat). citeturn4view0
+3) PKPO maxg@k estimator + gradient weights + LOO variance reduction. citeturn10view2turn10view0
+4) RSPO Max@k unbiased estimator (marginal contribution / hitchhiking fix). citeturn8view2turn7view0
+5) RL4CO paper/docs (so you implement it once and it runs across tasks). citeturn13search0turn13search1
+
+------------------------------------------------------------------------------
+12) Implementation checklist (paper-to-code sanity)
+------------------------------------------------------------------------------
+• Decide: are you optimizing Max@k (continuous reward) or Pass@k (binary)?
+  - CO usually wants Max@k on continuous reward (best tour).
+• Ensure n ≥ k for unbiased estimators (both PKPO/RSPO use that assumption).
+• Be careful with reward sign:
+  - If minimizing cost, use reward = −cost so “max” matches “best”.
+• Sorting ties:
+  - Define deterministic tie-break or add tiny noise (epsilon) to avoid unstable equal-reward ordering.
+• Variance reduction:
+  - Use per-instance baselines that do not depend on τ_i (LOO variants are designed to preserve unbiasedness).
+• Stability:
+  - Clip gradients, normalize advantages, and consider entropy/KL regularization (standard RL best practices).
+• Evaluation:
+  - Always report Max@K at the same K you optimize (RSPO stresses that matching train-k and eval-k matters). citeturn7view0turn8view2
+
+End of file.
