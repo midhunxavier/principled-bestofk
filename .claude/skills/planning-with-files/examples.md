@@ -1,60 +1,84 @@
 # Examples: Planning with Files in Action
 
-## Example 1: Research Task
+## Example 1: Research Task - Deriving Max@K Gradient Estimator
 
-**User Request:** "Research the benefits of morning exercise and write a summary"
+**User Request:** "Derive an unbiased gradient estimator for Max@K and compare to Leader Reward"
 
-### Loop 1: Create Plan
+### Loop 1: Create Task Folder and Plan
 ```bash
-Write task_plan.md
+mkdir -p docs/tasks/maxk-gradient-estimator
+Write docs/tasks/maxk-gradient-estimator/task_plan.md
+Write docs/tasks/maxk-gradient-estimator/findings.md
+Write docs/tasks/maxk-gradient-estimator/progress.md
 ```
 
+### docs/tasks/maxk-gradient-estimator/task_plan.md
 ```markdown
-# Task Plan: Morning Exercise Benefits Research
+# Task Plan: Unbiased Max@K Gradient Estimator
 
 ## Goal
-Create a research summary on the benefits of morning exercise.
+Derive a principled, unbiased gradient estimator for Max@K objective that improves on Leader Reward.
+
+## Current Phase
+Phase 1
+
+## Research Context
+**Reference:** knowledgebase/llm_context_maxk_rl4co.txt
+Key insight: Leader Reward is heuristic; PKPO/RSPO provide principled alternatives.
 
 ## Phases
-- [ ] Phase 1: Create this plan ✓
-- [ ] Phase 2: Search and gather sources
-- [ ] Phase 3: Synthesize findings
-- [ ] Phase 4: Deliver summary
-
-## Key Questions
-1. What are the physical health benefits?
-2. What are the mental health benefits?
-3. What scientific studies support this?
+- [ ] Phase 1: Review PKPO/RSPO math ✓
+- [ ] Phase 2: Derive CO-specific estimator
+- [ ] Phase 3: Implement in RL4CO
+- [ ] Phase 4: Benchmark vs Leader Reward
+- [ ] Phase 5: Document for paper
 
 ## Status
-**Currently in Phase 1** - Creating plan
+**Currently in Phase 1** - Reviewing existing estimators
 ```
 
-### Loop 2: Research
+### Loop 2: Literature Review
 ```bash
-Read task_plan.md           # Refresh goals
-WebSearch "morning exercise benefits"
-Write notes.md              # Store findings
-Edit task_plan.md           # Mark Phase 2 complete
+Read docs/tasks/maxk-gradient-estimator/task_plan.md     # Refresh goals
+Read knowledgebase/llm_context_maxk_rl4co.txt            # Get context
+Write docs/tasks/maxk-gradient-estimator/findings.md     # Store key equations
+Edit docs/tasks/maxk-gradient-estimator/task_plan.md     # Mark Phase 1 complete
 ```
 
-### Loop 3: Synthesize
-```bash
-Read task_plan.md           # Refresh goals
-Read notes.md               # Get findings
-Write morning_exercise_summary.md
-Edit task_plan.md           # Mark Phase 3 complete
+### docs/tasks/maxk-gradient-estimator/findings.md
+```markdown
+# Findings: Max@K Gradient Estimator
+
+## Key Equations from PKPO/RSPO
+
+### Unbiased maxg@k estimator (PKPO):
+ρ^(g)(n,k) = (1 / C(n,k)) Σ_{i=k..n} C(i−1, k−1) * g_i
+
+### Gradient weights:
+∇̂^(g) = Σ_i s_i ∇θ log p(x_i | θ)
+where s_i is weighted by marginal contribution.
+
+## Gap vs Leader Reward
+- Leader Reward: only boosts the single best sample
+- PKPO/RSPO: weight ALL samples by their marginal contribution to max@k
+- This provides credit assignment across the entire reward distribution
+
+## Key Insight
+Can combine POMO's multi-start exploration with RSPO's marginal contribution weights!
 ```
 
-### Loop 4: Deliver
+### Loop 3: Mathematical Derivation
 ```bash
-Read task_plan.md           # Verify complete
-Deliver morning_exercise_summary.md
+Read docs/tasks/maxk-gradient-estimator/task_plan.md    # Refresh goals
+Read docs/tasks/maxk-gradient-estimator/findings.md     # Get previous work
+# ... derivation work ...
+Edit docs/tasks/maxk-gradient-estimator/findings.md     # Add new derivations
+Edit docs/tasks/maxk-gradient-estimator/task_plan.md    # Mark Phase 2 complete
 ```
 
 ---
 
-## Example 2: Bug Fix Task
+## Example 2: Implementation Task - RL4CO Estimator
 
 **User Request:** "Fix the login bug in the authentication module"
 

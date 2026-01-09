@@ -1,14 +1,14 @@
 ---
 name: planning-with-files
-version: "2.0.0"
-description: Implements Manus-style file-based planning for complex tasks. Creates task_plan.md, findings.md, and progress.md. Use when starting complex multi-step tasks, research projects, or any task requiring >5 tool calls.
+version: "3.0.0"
+description: Implements Manus-style file-based planning for complex research and implementation tasks. Creates task folders in docs/tasks/ with task_plan.md, findings.md, and progress.md. Use when starting complex multi-step tasks, research projects, or any task requiring >5 tool calls. Specialized for Max@K/Best-of-K RL4CO research.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 hooks:
   PreToolUse:
     - matcher: "Write|Edit|Bash"
       hooks:
         - type: command
-          command: "cat task_plan.md 2>/dev/null | head -30 || true"
+          command: "find docs/tasks -name 'task_plan.md' -exec head -30 {} \\; 2>/dev/null || true"
   Stop:
     - hooks:
         - type: command
@@ -19,15 +19,26 @@ hooks:
 
 Work like Manus: Use persistent markdown files as your "working memory on disk."
 
+## Project Context: Max@K / Best-of-K RL4CO Research
+
+This project focuses on developing **unbiased and variance-reduced estimators for Max@K / Best-of-K RL** in combinatorial optimization. Key goals:
+
+- **Derive estimators cleanly** from first principles (PKPO/RSPO-style)
+- **Show lower variance and faster convergence** compared to Leader Reward
+- **Generalize across multiple RL4CO tasks** (TSP, VRP, OP, etc.)
+
+**Reference:** See `knowledgebase/llm_context_maxk_rl4co.txt` for complete technical context.
+
 ## Quick Start
 
 Before ANY complex task:
 
-1. **Create `task_plan.md`** — See [templates/task_plan.md](templates/task_plan.md)
-2. **Create `findings.md`** — See [templates/findings.md](templates/findings.md)
-3. **Create `progress.md`** — See [templates/progress.md](templates/progress.md)
-4. **Re-read plan before decisions** — Refreshes goals in attention window
-5. **Update after each phase** — Mark complete, log errors
+1. **Create a task folder** — `docs/tasks/[task-name]/`
+2. **Create `task_plan.md`** — See [templates/task_plan.md](templates/task_plan.md)
+3. **Create `findings.md`** — See [templates/findings.md](templates/findings.md)
+4. **Create `progress.md`** — See [templates/progress.md](templates/progress.md)
+5. **Re-read plan before decisions** — Refreshes goals in attention window
+6. **Update after each phase** — Mark complete, log errors
 
 ## The Core Pattern
 
@@ -38,13 +49,26 @@ Filesystem = Disk (persistent, unlimited)
 → Anything important gets written to disk.
 ```
 
+## Task Folder Structure
+
+Each task creates a dedicated folder in `docs/tasks/`:
+
+```
+docs/tasks/
+└── [task-name]/
+    ├── task_plan.md     # Phases, progress, decisions
+    ├── findings.md      # Research, discoveries
+    └── progress.md      # Session log, test results
+```
+
 ## File Purposes
 
 | File | Purpose | When to Update |
 |------|---------|----------------|
-| `task_plan.md` | Phases, progress, decisions | After each phase |
-| `findings.md` | Research, discoveries | After ANY discovery |
-| `progress.md` | Session log, test results | Throughout session |
+| `docs/tasks/[task]/task_plan.md` | Phases, progress, decisions | After each phase |
+| `docs/tasks/[task]/findings.md` | Research, discoveries | After ANY discovery |
+| `docs/tasks/[task]/progress.md` | Session log, test results | Throughout session |
+| `knowledgebase/*.txt` | Persistent research context | When learning new domain info |
 
 ## Critical Rules
 
@@ -134,10 +158,11 @@ If you can answer these, your context management is solid:
 
 **Use for:**
 - Multi-step tasks (3+ steps)
-- Research tasks
-- Building/creating projects
+- Research tasks (e.g., deriving Max@K estimators)
+- Building/creating projects (e.g., RL4CO implementations)
 - Tasks spanning many tool calls
-- Anything requiring organization
+- Experiments and benchmarking
+- Paper writing and analysis
 
 **Skip for:**
 - Simple questions
