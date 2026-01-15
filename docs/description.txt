@@ -1,4 +1,6 @@
-We propose an unbiased and variance-reduced estimator for Max@K / best-of-K RL in combinatorial optimization.” (Compare to Leader Reward and show improvements.). Unbiased or low-bias gradient estimators for Max@K / Best-of-K in RL4CO (https://rl4co.ai4co.org/), with stability improvements. This is very publishable if you: derive the estimator cleanly show lower variance and faster convergence than Leader Reward generalize across multiple RL4CO tasks Why this is fresh: Leader Reward is simple and effective, but not “principled” in unbiased estimation terms. RSPO provides ideas for this in LLM settings. 
+We propose an unbiased and variance-reduced estimator for Max@K / best-of-K RL in combinatorial optimization.” (Compare to Leader Reward and show improvements.). Unbiased or low-bias gradient estimators for Max@K / Best-of-K in RL4CO (https://rl4co.ai4co.org/), with stability improvements. 
+This is very publishable if you: derive the estimator cleanly show lower variance and faster convergence than Leader Reward generalize across multiple RL4CO tasks Why this is fresh: Leader Reward is simple and effective, but not “principled” in unbiased estimation terms. 
+RSPO provides ideas for this in LLM settings. 
 
 refer : @llm_context_maxk_rl4co.txt 
 
