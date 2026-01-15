@@ -161,23 +161,51 @@ We seek $\nabla_\theta J_{\text{max}@K}(\theta)$. The approach:
 
 ### 4.2 The Gradient Estimator
 
-**Theorem 4.1 (Unbiased Max@K Gradient Estimator).** Given $n \geq K$ samples $\{\tau_1, \ldots, \tau_n\}$ with rewards sorted ascending (let $\sigma$ be the sorting permutation so $R_{\sigma(1)} \leq \cdots \leq R_{\sigma(n)}$), an unbiased estimator of $\nabla_\theta J_{\text{max}@K}(\theta)$ is:
+**Theorem 4.1 (Unbiased Max@K Gradient Estimator; U-statistic form).** Given $n \geq K$ samples $\{\tau_1, \ldots, \tau_n\} \stackrel{\text{i.i.d.}}{\sim} \pi_\theta$, an unbiased estimator of $\nabla_\theta J_{\text{max}@K}(\theta)$ is:
 
 $$
-\boxed{\widehat{\nabla_\theta J}_{\text{max}@K} = \sum_{i=1}^{n} s_i \nabla_\theta \log \pi_\theta(\tau_{\sigma(i)})}
+\boxed{
+\widehat{\nabla_\theta J}_{\text{max}@K}
+=
+\frac{1}{\binom{n}{K}}
+\sum_{\substack{S\subseteq[n]\\|S|=K}}
+\left(\max_{i\in S} R(\tau_i)\right)
+\left(\sum_{j\in S}\nabla_\theta \log \pi_\theta(\tau_j)\right)
+}
 $$
 
-where the score weights $s_i$ for the $i$-th ranked sample are:
+This can always be rewritten as a per-sample weighted REINFORCE sum:
 
 $$
-\boxed{s_i = \sum_{j=\max(K, i)}^{n} \frac{\binom{j-1}{K-1}}{\binom{n}{K}} \left(R_{\sigma(i)} - R_{\sigma(j)}\right) + w_i R_{\sigma(i)}}
+\boxed{
+\widehat{\nabla_\theta J}_{\text{max}@K}
+=
+\sum_{i=1}^{n} s_i \nabla_\theta \log \pi_\theta(\tau_i),
+\qquad
+s_i
+=
+\frac{1}{\binom{n}{K}}
+\sum_{\substack{S\subseteq[n]\\|S|=K\\ i\in S}}
+\max_{j\in S} R(\tau_j)
+}
 $$
 
-Simplified form (using marginal contribution):
+Closed form in sorted order (for $K\ge 2$): let $\sigma$ sort rewards ascending so $R_{\sigma(1)} \le \cdots \le R_{\sigma(n)}$, and write $R_{(i)}:=R_{\sigma(i)}$. Then:
 
 $$
-s_i = w_i R_{\sigma(i)} - \sum_{j=i+1}^{n} \left(w_j - w_{j-1}\right) R_{\sigma(i)}
+\boxed{
+s_{\sigma(i)}
+=
+\frac{1}{\binom{n}{K}}
+\left[
+\mathbf{1}[i\ge K]\binom{i-1}{K-1}R_{(i)}
+\;+\;
+\sum_{j=i+1}^{n}\binom{j-2}{K-2}R_{(j)}
+\right]
+}
 $$
+
+For the full unbiasedness proof (and derivation of this closed form), see `docs/Tasks/Task1/task1.2/unbiasedness_proof.md`.
 
 ### 4.3 Alternative Formulation (RSPO-style)
 
@@ -200,12 +228,15 @@ $$
 For practical implementation, after sorting samples by reward (ascending), compute:
 
 ```
-For i = 1 to n:
-    if i < K:
-        s_i = 0
-    else:
-        s_i = C(i-1, K-1) / C(n, K) * R_{(i)}
-        s_i -= (leave-one-out baseline for sample i)
+Sort rewards ascending: R_(1) <= ... <= R_(n)
+
+If K == 1:
+    s_(i) = R_(i) / n
+Else:
+    Precompute suffix sums:
+        S_i = sum_{j=i+1..n} C(j-2, K-2) * R_(j)
+    Then for i = 1..n:
+        s_(i) = [ 1[i>=K]*C(i-1,K-1)*R_(i) + S_i ] / C(n,K)
 ```
 
 ---
@@ -248,53 +279,18 @@ $$
 
 ### 5.2 Proof of Theorem 4.1 (Gradient Estimator)
 
-**Claim:** $\mathbb{E}[\widehat{\nabla_\theta J}_{\text{max}@K}] = \nabla_\theta J_{\text{max}@K}(\theta)$
-
-**Proof:**
-
-Starting from the Max@K objective:
-
-$$
-J_{\text{max}@K}(\theta) = \sum_{\tau_1, \ldots, \tau_K} \pi_\theta(\tau_1) \cdots \pi_\theta(\tau_K) \max_i R(\tau_i)
-$$
-
-Taking the gradient:
-
-$$
-\nabla_\theta J_{\text{max}@K} = \sum_{\tau_1, \ldots, \tau_K} \left[\sum_{j=1}^{K} \nabla_\theta \pi_\theta(\tau_j) \prod_{i \neq j} \pi_\theta(\tau_i)\right] \max_i R(\tau_i)
-$$
-
-Using the log-derivative trick $\nabla_\theta \pi_\theta(\tau) = \pi_\theta(\tau) \nabla_\theta \log \pi_\theta(\tau)$:
-
-$$
-\nabla_\theta J_{\text{max}@K} = \mathbb{E}_{\tau_1, \ldots, \tau_K}\left[\sum_{j=1}^{K} \nabla_\theta \log \pi_\theta(\tau_j) \cdot \max_i R(\tau_i)\right]
-$$
-
-Now, for our estimator with $n \geq K$ samples, we consider all $K$-subsets uniformly. For each subset $S$, sample $\tau_j \in S$ contributes:
-
-$$
-\nabla_\theta \log \pi_\theta(\tau_j) \cdot \max_{\tau \in S} R(\tau)
-$$
-
-Aggregating over all subsets where $\tau_j$ appears and $\tau_j$ contributes to the maximum:
-
-The weight $s_i$ for the $i$-th ranked sample accounts for:
-1. Subsets where sample $i$ is the maximum (weight $w_i$)
-2. Subsets where sample $i$ is not the maximum (contributes to gradient but weighted by subset's max)
-
-The RSPO marginal contribution framing shows these weights yield an unbiased estimator. $\blacksquare$
+Full proof (including the score-function gradient identity and the U-statistic argument) is provided in `docs/Tasks/Task1/task1.2/unbiasedness_proof.md`.
 
 ### 5.3 Verification: Special Cases
 
 **Case K = n:**
-- Only $w_n = 1$, all others zero
-- Estimator = $R_{(n)} \nabla_\theta \log \pi_\theta(\tau_{(n)})$
-- Correct: with $K = n$ samples, we always take the max
+- Only subset is $S=[n]$
+- Estimator = $R_{(n)} \sum_{i=1}^{n} \nabla_\theta \log \pi_\theta(\tau_i)$
+- Correct: with $K=n$, the objective uses the maximum among $n$ samples
 
 **Case K = 1:**
-- All $w_i = 1/n$
-- Estimator = $\frac{1}{n} \sum_i R_i \nabla_\theta \log \pi_\theta(\tau_i)$
-- Correct: this is standard REINFORCE (risk-neutral)
+- Estimator = $\frac{1}{n} \sum_{i=1}^{n} R(\tau_i) \nabla_\theta \log \pi_\theta(\tau_i)$
+- Correct: standard REINFORCE (risk-neutral)
 
 ---
 
