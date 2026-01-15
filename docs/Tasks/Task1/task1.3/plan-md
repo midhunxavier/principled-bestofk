@@ -1,0 +1,123 @@
+T1.3: Derive Variance Reduction via LOO - Implementation Plan
+Mathematical formulation of Leave-One-Out variance reduction for Max@K gradient estimators in RL4CO.
+
+Background
+Task 1.1 and Task 1.2 have established:
+
+The unbiased Max@K gradient estimator (Theorem 4.1)
+Per-sample gradient weights via order statistics (Proposition 5.1)
+Two variance reduction methods: Sample-LOO and SubLOO (Section 6)
+Gap: While the estimators are defined and their unbiasedness proven, we lack:
+
+Complete formal variance analysis
+Quantitative comparison of variance between methods
+Efficient computation formulas for both LOO variants
+Theoretical variance bounds vs Leader Reward
+Proposed Document Structure
+[NEW] 
+loo_variance_reduction.md
+Section 1: Introduction & Motivation
+Review the high-variance nature of the base estimator $\widehat{G}_{n,K}$
+Explain hitchhiking contribution to variance
+State the goal: unbiased estimators with provably lower variance
+Section 2: Two LOO Methods - Formal Definitions
+2.1 Sample-LOO Baseline $$ b_i^{\text{LOO}} = \hat{\rho}^{(g)}(n-1, K; \text{excluding } \tau_i) = \frac{1}{\binom{n-1}{K}} \sum_{j \neq i, j \geq K'} \binom{j'-1}{K-1} R_{(j')} $$
+
+Where $(j', K')$ are adjusted ranks/indices after removing sample $i$. Derive:
+
+Explicit formula in terms of original order statistics
+Efficient $O(n)$ computation via suffix sums
+2.2 SubLOO (Per-Subset LOO) $$ \tilde{s}i^{\text{SubLOO}} = \frac{1}{\binom{n}{K}} \sum{\substack{S \ni i \ |S|=K}} \left(\max_{j \in S} R_j - \max_{j \in S \setminus {i}} R_j\right) $$
+
+Derive closed-form: $$ \tilde{s}{\sigma(i)}^{\text{SubLOO}} = \frac{1}{\binom{n}{K}} \sum{m=K}^{i} \binom{m-2}{K-2}(R_{(i)} - R_{(m-1)}) \cdot \mathbf{1}[i \geq K] $$
+
+Section 3: Variance Analysis
+3.1 Variance Decomposition For any REINFORCE-style estimator $\hat{G} = \sum_i A_i \psi_i$: $$ \text{Var}[\hat{G}] = \sum_{i,j} \text{Cov}[A_i \psi_i, A_j \psi_j] $$
+
+Derive simplified forms assuming independence between samples.
+
+3.2 Sample-LOO Variance Reduction
+
+Prove: $\text{Var}[\hat{G}^{\text{Sample-LOO}}] < \text{Var}[\hat{G}_{n,K}]$
+Quantify reduction in terms of correlation between $s_i$ and $b_i^{\text{LOO}}$
+3.3 SubLOO Variance Reduction
+
+Prove: $\text{Var}[\hat{G}^{\text{SubLOO}}] < \text{Var}[\hat{G}^{\text{Sample-LOO}}]$
+Key insight: SubLOO sets non-max weights to exactly 0 within each subset
+3.4 Variance Bounds Derive upper bounds on variance in terms of:
+
+Reward variance $\text{Var}[R]$
+Number of samples $n$ and subset size $K$
+Policy entropy
+Section 4: Efficient Computation Algorithms
+4.1 Sample-LOO Algorithm
+
+Input: sorted rewards R_(1) ≤ ... ≤ R_(n), parameters n, K
+Output: LOO baselines b_i for each sample
+Precompute:
+  total = sum_{j=K..n} C(j-1,K-1) * R_(j)
+  
+For i = 1..n:
+  # Compute max@K estimate excluding sample i
+  if i >= K:
+    # Sample i could be in top-K region
+    b_i = (total - contribution_of_i) / C(n-1,K)
+  else:
+    # Sample i is below rank K
+    b_i = total / C(n-1,K)
+Complexity: $O(n \log n)$ for sorting, $O(n)$ for baselines
+
+4.2 SubLOO Algorithm
+
+Input: sorted rewards R_(1) ≤ ... ≤ R_(n), parameters n, K
+Output: variance-reduced weights s_i^SubLOO
+Precompute suffix sums:
+  For j = n down to K:
+    suffix_comb[j] = C(j-2, K-2)
+    suffix_sum[j] = suffix sum of suffix_comb[m] for m >= j
+For i = K..n (lower ranks get 0):
+  s_i = R_(i) * suffix_sum[i] - sum_{m=K..i-1} suffix_comb[m] * R_(m-1)
+  s_i /= C(n,K)
+Complexity: $O(n \log n)$ for sorting, $O(n)$ for weights
+
+Section 5: Comparison with Leader Reward
+5.1 Leader Reward Variance Model: $A_i^{\text{LR}} = (R_i - \bar{R}) + \alpha \cdot \mathbf{1}[i = \text{argmax}] \cdot \beta$
+
+Derive variance expression showing:
+
+Large $\alpha$ increases variance
+Bias-variance tradeoff (Leader Reward is biased but may have lower variance for small $\alpha$)
+5.2 Theoretical Comparison
+
+Under what conditions does SubLOO have lower variance than Leader Reward?
+Show that SubLOO variance decreases as $O(1/n)$ while maintaining unbiasedness
+5.3 Key Advantages Summary Table
+
+Property	Base	Sample-LOO	SubLOO	Leader Reward
+Unbiased	✓	✓	✓	✗
+No hitchhiking	✗	Partial	✓	Partial
+Variance	High	Medium	Low	Medium (α-dependent)
+Complexity	O(n log n)	O(n log n)	O(n log n)	O(n)
+Verification Plan
+Since this is a mathematical formulation task, verification focuses on correctness of derivations:
+
+1. Sanity Checks via Small Examples
+Enumerate all $\binom{4}{2}=6$ subsets for $(n,K)=(4,2)$
+Manually compute Sample-LOO and SubLOO weights
+Verify closed-form formulas match enumeration
+2. Numerical Verification (Future Implementation)
+In Phase 2 (T2.3), implement both LOO baselines and verify:
+
+Estimated gradient matches true gradient (Monte Carlo test)
+Variance reduction is observed empirically
+Commands will be specified in T2 implementation plan
+3. Cross-Reference with Source Papers
+Verify consistency with PKPO Theorem 5 (LOO baselines)
+Verify consistency with RSPO Theorem 4.4 (marginal contribution)
+Non-Goals (Out of Scope for T1.3)
+Implementation code (covered in T2.3)
+Empirical variance measurements (covered in T4.5)
+Proofs of convergence rate (optional extension)
+Timeline
+Estimated effort: 2-3 hours for complete document
+Deliverable: docs/Tasks/Task1/task1.3/loo_variance_reduction.md

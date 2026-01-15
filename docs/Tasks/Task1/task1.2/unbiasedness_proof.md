@@ -1,8 +1,8 @@
 # Prove Unbiasedness Property (T1.2)
 
 **Task:** T1.2 — Prove unbiasedness property  
-**Status:** Draft (theorem + full proof)  
-**Date:** January 15, 2026  
+**Status:** Complete (theorem + full proof)  
+**Date:** January 15, 2026 (revised)  
 
 ---
 
@@ -169,7 +169,13 @@ s_i
 \max_{j\in S} R(\tau_j).
 $$
 
-So $s_i$ is the average Max@K reward (over all $K$-subsets) conditional on the subset containing sample $i$.
+**Interpretation.** Note that $s_i$ is **not** the conditional average $\mathbb{E}[\max_{j \in S} R_j \mid i \in S]$. The number of $K$-subsets containing sample $i$ is $\binom{n-1}{K-1}$, so the conditional average would divide by $\binom{n-1}{K-1}$. Since we divide by $\binom{n}{K}$ instead, we have:
+
+$$
+s_i = \frac{\binom{n-1}{K-1}}{\binom{n}{K}} \times \mathbb{E}[\max_{j \in S} R_j \mid i \in S] = \frac{K}{n} \times (\text{conditional average}).
+$$
+
+This scaling factor $K/n$ is consistent: summing $s_i$ over all $i$ yields the unbiased Max@K reward estimator $\hat{\rho}^{(g)}(n,K)$.
 
 ### 5.1 Closed Form via Order Statistics
 
@@ -244,10 +250,10 @@ A standard control-variate idea is to subtract, for each score term, a baseline 
 For a fixed subset $S$ and element $i\in S$, define the per-subset leave-one-out baseline
 
 $$
-b_{i,S} := \max_{j\in S\setminus\{i\}} R(\tau_j),
+b_{i,S} := \max_{j\in S\setminus\{i\}} R(\tau_j).
 $$
 
-with the convention that $\max(\varnothing)=-\infty$ so that when $K=1$ the baseline is irrelevant.
+**Important: $K \geq 2$ requirement.** The SubLOO estimator is defined for $K \geq 2$. When $K=1$, each subset $S = \{i\}$ has $S \setminus \{i\} = \varnothing$, and $\max(\varnothing)$ is undefined (or $-\infty$, which would make the gradient term infinite). For $K=1$, the objective reduces to risk-neutral expected reward, and standard REINFORCE (Section 5.2) should be used instead.
 
 Define the modified estimator:
 
@@ -291,7 +297,87 @@ For any fixed subset $S$, the quantity $\max_{j\in S}R(\tau_j)-b_{i,S}$ equals $
 
 ---
 
-## Appendix A. Small $(n,K)$ Enumeration Sanity Check (Outline)
+## 7. Clarification: SubLOO vs. Sample-LOO and the Simplification Error
+
+This section addresses potential confusion about variance-reduced estimators for the Max@K gradient.
+
+### 7.1 Two Variance Reduction Methods
+
+**Sample-LOO:** Subtract a sample-level leave-one-out baseline from the full gradient weight:
+
+$$
+\tilde{s}_i^{\text{Sample-LOO}} = s_i - b_i^{\text{LOO}}, \qquad b_i^{\text{LOO}} = \hat{\rho}^{(g)}(n-1, K; \text{excluding } \tau_i)
+$$
+
+where $s_i$ is computed via Proposition 5.1. This preserves unbiasedness because $b_i^{\text{LOO}}$ is independent of $\tau_i$.
+
+**SubLOO (this document, Section 6):** Subtract a per-subset baseline within each subset:
+
+$$
+\tilde{s}_i^{\text{SubLOO}} = \frac{1}{\binom{n}{K}} \sum_{\substack{S \ni i \\ |S|=K}} \left(\max_{j \in S} R_j - \max_{j \in S \setminus \{i\}} R_j\right)
+$$
+
+### 7.2 The Incorrect Simplification
+
+A **common error** is to write the variance-reduced weight as:
+
+$$
+\tilde{s}_i^{\text{WRONG}} = w_i \cdot (R_{(i)} - b_i^{\text{LOO}}) \quad \text{(INCORRECT)}
+$$
+
+where $w_i = \frac{\binom{i-1}{K-1}}{\binom{n}{K}} \cdot \mathbf{1}[i \geq K]$.
+
+**Why this is wrong:** The weight $w_i$ only captures the "Win" probability (Case 1 in Proposition 5.1), but the true gradient weight $s_i$ also includes the "Support" term (Case 2). Specifically:
+
+- For ranks $i < K$: $w_i = 0$ but $s_i > 0$ (due to Support term)
+- For ranks $i \geq K$: $w_i > 0$ but $s_i \neq w_i \cdot R_{(i)}$
+
+Using $w_i$ instead of $s_i$ drops the Support terms entirely, yielding a **biased** estimator equivalent to "Top-K only" REINFORCE.
+
+### 7.3 Correct Implementation
+
+The correct variance-reduced estimator is either:
+
+1. **Sample-LOO:** $\tilde{s}_i = s_i - b_i^{\text{LOO}}$, computing $s_i$ via the full formula in Proposition 5.1.
+
+2. **SubLOO:** $\tilde{s}_i^{\text{SubLOO}}$ as defined in Section 6, which can be computed efficiently via:
+
+$$
+\tilde{s}_{\sigma(i)}^{\text{SubLOO}} = \frac{1}{\binom{n}{K}} \sum_{j=K}^{i} \binom{j-2}{K-2} \cdot \mathbf{1}[i \geq K] \cdot (R_{(i)} - R_{(j-1)})
+$$
+
+or equivalently by the gap-weighted formula derived from the per-subset decomposition.
+
+### 7.4 Hitchhiking Summary
+
+| Estimator | Includes Hitchhiking? | Unbiased? |
+|-----------|----------------------|-----------|
+| Base $s_i$ (Prop. 5.1) | Yes (Support term) | Yes |
+| Sample-LOO $s_i - b_i^{\text{LOO}}$ | Reduced | Yes |
+| SubLOO (Section 6) | No | Yes |
+| $w_i(R_i - b_i)$ (wrong) | N/A (biased formula) | **No** |
+
+---
+
+## Appendix B. Tie-Breaking for Discrete Rewards
+
+When rewards are discrete (e.g., integer scores), ties may occur frequently. This affects the SubLOO estimator:
+
+**Issue:** If the maximum and second-maximum rewards are equal within a subset, the gap $R_{\text{max}} - R_{\text{second-max}} = 0$, producing zero gradient signal.
+
+**Recommendations:**
+
+1. **Add infinitesimal noise:** $\tilde{R}_i = R_i + \epsilon_i$ where $\epsilon_i \sim \text{Uniform}(-\delta, \delta)$ with $\delta \ll 1$. This ensures strict ordering without materially changing reward semantics.
+
+2. **Deterministic tie-breaking by index:** When rewards are equal, use sample index as a secondary sort key. This ensures a strict winner exists.
+
+3. **Accept zero gradients for genuine ties:** If tied-for-first samples are genuinely equivalent, zero gradient is semantically correct—there is no marginal difference to optimize.
+
+The unbiasedness proofs in this document hold under any deterministic tie-breaking rule.
+
+---
+
+## Appendix C. Small $(n,K)$ Enumeration Sanity Check (Outline)
 
 For $(n,K)=(4,2)$, enumerate all $\binom{4}{2}=6$ subsets $S$ and verify:
 
@@ -301,4 +387,3 @@ For $(n,K)=(4,2)$, enumerate all $\binom{4}{2}=6$ subsets $S$ and verify:
    - max-rank $j>i$ contributes $\binom{j-2}{0}=1$ subset per $j$.
 
 This check is purely combinatorial and independent of $\pi_\theta$.
-

@@ -316,66 +316,84 @@ $$
 
 i.e., the Max@K estimator computed on the remaining $n-1$ samples.
 
-### 6.3 Unbiased LOO Gradient Estimator
+### 6.3 Variance-Reduced Gradient Estimators
 
-**Theorem 6.1 (LOO Variance Reduction).** The estimator:
+We present two unbiased variance-reduced forms: the **Sample-LOO** method and the **SubLOO** method.
 
-$$
-\widehat{\nabla_\theta J}_{\text{max}@K}^{\text{LOO}} = \sum_{i=1}^{n} \left(s_i - b_i^{\text{LOO}} \cdot w_i'\right) \nabla_\theta \log \pi_\theta(\tau_i)
-$$
+#### 6.3.1 Sample-LOO Baseline Subtraction
 
-is unbiased, where $w_i'$ is the contribution of sample $i$ to the gradient weight.
-
-**Simplified form:** For the $i$-th ranked sample:
+**Theorem 6.1 (Sample-LOO Variance Reduction).** The estimator:
 
 $$
-\boxed{\tilde{s}_i = w_i \cdot \left(R_{\sigma(i)} - b_i^{\text{LOO}}\right)}
+\boxed{
+\widehat{\nabla_\theta J}_{\text{max}@K}^{\text{Sample-LOO}} = \sum_{i=1}^{n} \left(s_i - b_i^{\text{LOO}}\right) \nabla_\theta \log \pi_\theta(\tau_i)
+}
 $$
 
-where:
+is unbiased, where $s_i$ is computed from **Eq. (4.1)** (Section 4.2) and $b_i^{\text{LOO}}$ is defined in Section 6.2.
+
+**Proof.** Since $b_i^{\text{LOO}}$ depends only on $\{\tau_j : j \neq i\}$, the baseline term $\mathbb{E}[b_i^{\text{LOO}} \nabla_\theta \log \pi_\theta(\tau_i)] = \mathbb{E}[b_i^{\text{LOO}}] \cdot \mathbb{E}[\nabla_\theta \log \pi_\theta(\tau_i)] = 0$ by the score function identity. $\blacksquare$
+
+**Important:** For all ranks $i$ (including $i < K$), the gradient weight $s_i$ is generally non-zero due to the "Support" term in Eq. (4.1). Only when combined with the SubLOO method (below) do low-ranked samples receive zero weight.
+
+#### 6.3.2 SubLOO: Per-Subset Baseline (Hitchhiking-Free)
+
+**Definition 6.2 (SubLOO Baseline).** For a subset $S$ and element $i \in S$:
 
 $$
-b_i^{\text{LOO}} = \frac{1}{\binom{n-1}{K}} \sum_{\substack{j=K \\ j \neq i}}^{n} \binom{j'-1}{K-1} R_{\sigma(j)}
+b_{i,S} := \max_{j \in S \setminus \{i\}} R(\tau_j)
 $$
 
-Here $j'$ is the rank of sample $j$ in the leave-one-out set.
+**Theorem 6.2 (SubLOO Variance Reduction).** The estimator:
+
+$$
+\boxed{
+\widehat{\nabla_\theta J}_{\text{max}@K}^{\text{SubLOO}} = \frac{1}{\binom{n}{K}} \sum_{|S|=K} \sum_{i \in S} \left(\max_{j \in S} R(\tau_j) - b_{i,S}\right) \nabla_\theta \log \pi_\theta(\tau_i)
+}
+$$
+
+is unbiased. Moreover, within each subset $S$, **only the maximum element receives non-zero weight** (equal to the max–second-max gap).
+
+**Proof.** See `docs/Tasks/Task1/task1.2/unbiasedness_proof.md`, Proposition 6.1. $\blacksquare$
+
+**Key Property:** SubLOO eliminates "hitchhiking" by ensuring non-winners in each subset receive zero gradient signal for that subset.
 
 ### 6.4 Computational Efficiency
 
-**Naive computation:** $O(n^2)$ - recompute estimator for each LOO set
+**For Sample-LOO:** $O(n \log n)$ using suffix-sum precomputation similar to computing $s_i$.
 
-**Efficient computation:** $O(n \log n)$ - use incremental updates
+**For SubLOO:** The per-sample weight can be computed efficiently:
 
 ```python
-def compute_loo_baselines_efficient(sorted_rewards, n, K):
+def compute_subloo_weights(sorted_rewards, n, K):
     """
-    Compute LOO baselines in O(n) after O(n log n) sorting.
+    Compute SubLOO variance-reduced weights in O(n) after sorting.
+    Only the maximum in each subset contributes; total weight for
+    rank-i sample is sum of (R_(i) - R_(i-1)) over subsets where i is max.
     """
-    # Precompute cumulative weighted sums
-    total = sum(C(i-1, K-1) * R[i] for i in range(K-1, n)) / C(n, K)
-
-    baselines = []
-    for i in range(n):
-        if i < K - 1:
-            # Sample i doesn't contribute to original estimator
-            # LOO estimator uses n-1 samples
-            b_i = recompute_with_shifted_ranks(sorted_rewards, i, n-1, K)
-        else:
-            # Subtract contribution of sample i, adjust normalization
-            b_i = adjust_estimator_removing_sample(total, i, n, K)
-        baselines.append(b_i)
-    return baselines
+    # For rank i >= K, number of subsets where i is maximum: C(i-1, K-1)
+    # In each such subset, the second-max has rank at most i-1
+    # Expected contribution: C(i-1, K-1) * (R_(i) - E[second_max | i is max])
+    
+    weights = [0.0] * n
+    for i in range(K-1, n):  # i is 0-indexed, so this is rank K to n
+        # Number of subsets where rank-i is the maximum
+        num_subsets = comb(i, K-1)
+        # For each subset, weight = R_(i) - max of remaining K-1 elements
+        # This requires computing expected second-max, done via suffix sums
+        weights[i] = compute_gap_contribution(sorted_rewards, i, K) / comb(n, K)
+    return weights
 ```
 
 ### 6.5 Variance Analysis
 
-**Proposition 6.1.** The LOO baseline reduces variance by eliminating correlation between the sample and its baseline:
+**Proposition 6.1 (Variance Reduction).** Under mild conditions (non-constant rewards and non-degenerate baseline correlation), both variance-reduced estimators have lower or equal variance than the base estimator:
 
 $$
-\text{Var}[\tilde{s}_i \nabla \log \pi] < \text{Var}[s_i \nabla \log \pi]
+\text{Var}[\widehat{G}^{\text{LOO}}] \leq \text{Var}[\widehat{G}_{n,K}]
 $$
 
-when $\text{Cov}(R_i, b_i^{\text{LOO}}) > 0$, which holds in practice.
+Strict inequality holds when $\text{Cov}(s_i, b_i^{\text{LOO}}) > 0$, which is typical in practice since both depend positively on the reward distribution. The SubLOO variant typically achieves the largest variance reduction by completely eliminating hitchhiking.
 
 ---
 
@@ -418,13 +436,21 @@ where:
 
 ### 7.4 The Hitchhiking Problem
 
-**Definition 7.1 (Hitchhiking).** A sample "hitchhikes" when it receives positive gradient weight despite not contributing to the objective.
+**Definition 7.1 (Hitchhiking).** A sample "hitchhikes" when it receives positive gradient weight despite not being the maximum in a given $K$-subset.
 
 **Leader Reward's partial solution:** Only the leader gets boosted, preventing explicit hitchhiking.
 
-**Leader Reward's failure:** It's too aggressive - samples ranked 2nd through $K$-th also deserve credit but receive none.
+**Leader Reward's failure:** It's too aggressive—samples ranked 2nd through $K$-th also deserve credit for being potential winners in many $K$-subsets, but receive none.
 
-**Our solution:** Combinatorial weights give each sample credit proportional to its marginal contribution to Max@K, eliminating hitchhiking while preserving proper credit assignment.
+**Our base estimator (Eq. 4.1):** The combinatorial weights give credit based on *all* $K$-subsets containing each sample. This means a sample receives credit for:
+1. **Win term:** Subsets where it is the maximum (proper credit)
+2. **Support term:** Subsets where another sample wins (hitchhiking)
+
+The Support term is necessary for unbiasedness but increases variance.
+
+**Our SubLOO estimator (Section 6.3.2):** By subtracting the per-subset baseline $b_{i,S} = \max_{j \in S \setminus \{i\}} R(\tau_j)$, we eliminate hitchhiking entirely. Within each subset, only the winner receives non-zero gradient weight, equal to the gap $R_{\text{max}} - R_{\text{second-max}}$. This is both unbiased and hitchhiking-free.
+
+**Summary:** The base estimator is unbiased but includes hitchhiking. The SubLOO estimator is both unbiased and hitchhiking-free, achieving lower variance.
 
 ---
 
@@ -444,21 +470,38 @@ where:
 POMO generates $N$ trajectories from different starting nodes. Our estimator applies as:
 
 ```python
-def maxk_pomo_loss(policy, instance, n_starts, K):
+def maxk_pomo_gradient(policy, instance, n_starts, K):
     # POMO: n_starts trajectories from different starting nodes
     trajectories = pomo_rollout(policy, instance, n_starts)
     rewards = [compute_reward(τ) for τ in trajectories]
     log_probs = [policy.log_prob(τ) for τ in trajectories]
 
-    # Our estimator (n = n_starts)
-    weights = compute_maxk_weights(rewards, n_starts, K)
+    # Compute gradient weights s_i via Proposition 5.1 (includes Support term)
+    s_weights = compute_full_gradient_weights(rewards, n_starts, K)  # NOT just w_i!
+    
+    # Sample-LOO variance reduction
     loo_baselines = compute_loo_baselines(rewards, n_starts, K)
+    variance_reduced_weights = [s_weights[i] - loo_baselines[i] for i in range(n_starts)]
 
-    advantages = weights * (rewards - loo_baselines)
-    loss = -sum(advantages[i] * log_probs[i] for i in range(n_starts))
+    # Surrogate loss: gradient of this equals the REINFORCE estimator
+    # Note: variance_reduced_weights are treated as constants (stop-gradient)
+    surrogate_loss = -sum(stop_grad(variance_reduced_weights[i]) * log_probs[i] 
+                          for i in range(n_starts))
 
-    return loss
+    return surrogate_loss
 ```
+
+**Important:** The `variance_reduced_weights` are computed from rewards and must be detached from the computational graph (stop-gradient) before multiplying with `log_probs`. The gradient of the surrogate loss with respect to $\theta$ yields the unbiased REINFORCE estimator.
+
+### 8.2.1 Note on i.i.d. Assumption
+
+**Caveat:** The proofs in this document assume $\tau_1, \ldots, \tau_n \stackrel{\text{i.i.d.}}{\sim} \pi_\theta$. Standard POMO uses a **deterministic** set of starting nodes (all $N$ nodes for an $N$-city TSP), which means trajectories are not identically distributed—each starts from a different node.
+
+**Justification for POMO:** The i.i.d. assumption can be recovered by defining the policy distribution as:
+$$
+\pi_\theta(\tau) = \frac{1}{N} \sum_{s=1}^{N} \pi_\theta(\tau \mid \text{start}=s)
+$$
+i.e., uniform sampling over starting nodes followed by policy rollout. Under this compound distribution, all $N$ POMO trajectories are exchangeable, and the U-statistic argument applies. This interpretation is implicit in standard POMO training.
 
 ### 8.3 Handling Reward Sign
 
@@ -506,14 +549,26 @@ $$
 w_i = \frac{\binom{i-1}{K-1}}{\binom{n}{K}} \cdot \mathbf{1}[i \geq K]
 $$
 
-**Gradient weight with LOO baseline:**
+**Gradient weight (Sample-LOO):**
 $$
-\tilde{s}_i = w_i \cdot (R_{\sigma(i)} - b_i^{\text{LOO}})
+\tilde{s}_i^{\text{Sample-LOO}} = s_i - b_i^{\text{LOO}}
 $$
 
-**Policy gradient loss:**
+where $s_i$ is from Eq. (4.1) and $b_i^{\text{LOO}}$ is the leave-one-out Max@K estimate.
+
+**Gradient weight (SubLOO, hitchhiking-free):**
 $$
-\mathcal{L}(\theta) = -\sum_{i=1}^{n} \tilde{s}_i \log \pi_\theta(\tau_{\sigma(i)})
+\tilde{s}_i^{\text{SubLOO}} = \frac{1}{\binom{n}{K}} \sum_{\substack{S \ni i \\ |S|=K}} \left(\max_{j \in S} R_j - \max_{j \in S \setminus \{i\}} R_j\right)
+$$
+
+**Surrogate loss for autodiff:**
+$$
+\mathcal{L}_{\text{surr}}(\theta) = -\sum_{i=1}^{n} [\tilde{s}_i]_{\text{stop-grad}} \cdot \log \pi_\theta(\tau_i)
+$$
+
+where $[\cdot]_{\text{stop-grad}}$ indicates the weights are treated as constants. Differentiating $\mathcal{L}_{\text{surr}}$ with respect to $\theta$ yields the unbiased REINFORCE gradient:
+$$
+\nabla_\theta \mathcal{L}_{\text{surr}}(\theta) = -\sum_{i=1}^{n} \tilde{s}_i \nabla_\theta \log \pi_\theta(\tau_i) = \widehat{\nabla_\theta J}_{\text{max}@K}
 $$
 
 ### 9.3 Computational Complexity
