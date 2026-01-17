@@ -14,28 +14,24 @@ Agents should adhere to this structure when creating new files:
 ```
 principled-bestofk/
 ├── code/                 # Packaged code and dependencies
-│   ├── requirements.txt  # Dependency list (mirrors root)
+│   ├── requirements.txt  # Dependency list
 │   └── src/              # Source code
 │       ├── estimators/   # Core math implementations
 │       ├── algorithms/   # RL algorithms (MaxK REINFORCE)
 │       └── experiments/  # Training scripts
+│   └── tests/            # Unit tests (pytest)
 ├── docs/                 # Research narrative, proofs, PRD
-├── src/                  # Source code (to be created)
-│   ├── estimators/       # Core math implementations
-│   ├── algorithms/       # RL algorithms (MaxK REINFORCE)
-│   └── experiments/      # Training scripts
-├── tests/                # Unit tests (pytest)
 ├── notebooks/            # Analysis and derivation validation
 └── AGENTS.md             # This file
 ```
 
 ## 2. Build, Test, and Lint Commands
 
-Although this repository started as documentation-only, it is transitioning to code. Use the following standard commands. If configuration files (`pyproject.toml`, `requirements.txt`) are missing, assume standard Python conventions or ask the user.
+Although this repository started as documentation-only, it is transitioning to code. Use the following standard commands. If configuration files (`pyproject.toml`) are missing, assume standard Python conventions or ask the user.
 
 ### Environment Management
 - **Dependency Manager**: Prefer `uv` or `pip`.
-- **Install**: `pip install -r code/requirements.txt` (preferred) or `pip install -r requirements.txt` or `pip install torch rl4co`.
+- **Install**: `pip install -r code/requirements.txt` (preferred) or `pip install torch rl4co`.
 
 ### Testing
 - **Framework**: `pytest`
@@ -45,11 +41,11 @@ Although this repository started as documentation-only, it is transitioning to c
   ```
 - **Run Single Test File**:
   ```bash
-  pytest tests/test_estimators.py
+  pytest code/tests/test_estimators.py
   ```
 - **Run Single Test Method**:
   ```bash
-  pytest tests/test_estimators.py::test_unbiasedness -v
+  pytest code/tests/test_estimators.py::test_unbiasedness -v
   ```
 - **Constraint**: *Always* create a test file when creating a new module.
 
@@ -63,7 +59,7 @@ Although this repository started as documentation-only, it is transitioning to c
 # Before committing code changes:
 ruff check . --fix  # Fix lint errors
 ruff format .       # Enforce style
-mypy src/           # Check types
+mypy code/src/      # Check types
 pytest              # Verify correctness
 ```
 
@@ -135,7 +131,7 @@ pytest              # Verify correctness
 ## 5. Workflow Rules for Agents
 
 1. **Read First**: Before editing code, read `docs/PRD.md` and related derivations to understand the *why*.
-2. **Test Driven**: If asked to implement a feature (e.g., "Implement the LOO baseline"), create `tests/test_loo.py` *before* or *simultaneously* with the implementation.
+2. **Test Driven**: If asked to implement a feature (e.g., "Implement the LOO baseline"), create `code/tests/test_loo.py` *before* or *simultaneously* with the implementation.
 3. **No Placeholders**: Do not leave `pass` or `TODO` in critical logic paths unless explicitly instructed.
 4. **Verify Environment**: If a tool fails (e.g., `pytest` not found), do not halluncinate output. Ask the user to install dependencies or fall back to inspecting code logic.
 5. **Git Hygiene**:

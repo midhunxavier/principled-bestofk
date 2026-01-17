@@ -342,7 +342,7 @@ def maxk_policy_gradient(policy, instances, n_samples, k):
 ```
 principled-bestofk/
 ├── code/
-│   ├── requirements.txt          # Dependency list (mirrors root)
+│   ├── requirements.txt          # Dependency list
 │   └── src/
 │       ├── estimators/
 │       │   ├── __init__.py
@@ -368,8 +368,7 @@ principled-bestofk/
 ├── knowledgebase/
 │   ├── llm_context_maxk_rl4co.txt
 │   └── papers/
-├── src/                          # Legacy source root (mirrors code/src)
-├── tests/
+├── code/tests/
 │   ├── test_estimators.py
 │   └── test_algorithms.py
 ├── notebooks/
