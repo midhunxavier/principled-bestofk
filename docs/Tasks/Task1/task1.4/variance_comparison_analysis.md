@@ -155,13 +155,15 @@ $$
    |\tilde{s}_i^{\text{SubLOO}}| \leq \frac{\binom{i-1}{K-1}}{\binom{n}{K}} \cdot (R_{\max} - R_{\min})
    $$
 
-**Corollary 2.2 (Hitchhiking Elimination).** SubLOO eliminates variance from the Support term entirely:
+**Corollary 2.2 (Hitchhiking Elimination; per-subset statement).** SubLOO eliminates the *within-subset* hitchhiking contributions entirely: in each subset $S$, all non-max elements have zero contribution, and the max element receives the max–second-max gap.
+
+This implies a reduction in the conditional variance of each per-subset score term (holding the other samples fixed). However, a global unconditional inequality
 
 $$
-\text{Var}[\widehat{G}^{\text{SubLOO}}] < \text{Var}[\widehat{G}_{n,K}]
+\text{Var}[\widehat{G}^{\text{SubLOO}}] \le \text{Var}[\widehat{G}_{n,K}]
 $$
 
-when $\text{Var}[R] > 0$ and the reward distribution is non-degenerate.
+does not automatically follow without additional assumptions controlling cross-covariance terms across samples/subsets (see Remark 3.2 in T1.3). In practice, SubLOO is expected to reduce variance because it removes a major source of noise (hitchhiking).
 
 ### 2.5 Leader Reward Variance
 
@@ -210,16 +212,21 @@ For large $\alpha$, the $O(\alpha^2)$ term dominates, increasing total variance.
 
 ### 3.1 Variance Ordering Theorem
 
-**Theorem 3.1 (Variance Ordering).** Under the following conditions:
+**Theorem 3.1 (Variance Ordering; conditional / typical-case statement).** Under the following conditions:
 1. $n > K \geq 2$
 2. $\text{Var}[R(\tau)] > 0$
-3. Sufficient correlation: $\text{Corr}(s_i, b_i^{\text{LOO}}) > \frac{1}{2}\sqrt{\text{Var}[b]/\text{Var}[s]}$
+3. Sufficient correlation for Sample-LOO: $\text{Corr}(s_i, b_i^{\text{LOO}}) > \frac{1}{2}\sqrt{\text{Var}[b]/\text{Var}[s]}$
 
-we have:
+we have the following *typical* ordering (and a *conditional/per-subset* guarantee for SubLOO):
 
+- **Sample-LOO vs. base:** the per-sample variance contribution decreases under condition (3) (T1.3 Theorem 3.1). A full global variance inequality additionally depends on cross-covariance terms.
+- **SubLOO vs. others:** SubLOO eliminates within-subset hitchhiking, which reduces the conditional variance of each per-subset score term. A global unconditional inequality requires extra assumptions controlling cross-covariance terms (see Remark 3.2 in T1.3).
+
+In practice, this motivates the heuristic ordering
 $$
-\boxed{\text{Var}[\widehat{G}^{\text{SubLOO}}] \leq \text{Var}[\widehat{G}^{\text{Sample-LOO}}] \leq \text{Var}[\widehat{G}_{n,K}]}
+\text{Var}[\widehat{G}^{\text{SubLOO}}] \lesssim \text{Var}[\widehat{G}^{\text{Sample-LOO}}] \lesssim \text{Var}[\widehat{G}_{n,K}],
 $$
+with the key distinction that only unbiasedness is unconditional.
 
 **Proof Sketch.**
 
@@ -439,10 +446,7 @@ Based on variance analysis, recommended clipping thresholds:
 
 ### 7.1 Key Theoretical Findings
 
-1. **Variance Ordering Confirmed:** Under standard conditions:
-   $$
-   \text{Var}[\widehat{G}^{\text{SubLOO}}] \leq \text{Var}[\widehat{G}^{\text{Sample-LOO}}] \leq \text{Var}[\widehat{G}_{n,K}]
-   $$
+1. **Variance Ordering (Qualified):** Under standard conditions, Sample-LOO reduces per-sample variance contributions when its baseline is sufficiently correlated (T1.3 Theorem 3.1), and SubLOO eliminates within-subset hitchhiking. A global unconditional ordering of total variances additionally depends on cross-covariance structure (T1.3 Remark 3.2).
 
 2. **Hitchhiking Eliminated:** SubLOO sets Support-term contributions exactly to zero, removing a significant variance source.
 
@@ -467,7 +471,7 @@ Based on variance analysis, recommended clipping thresholds:
 
 1. **For principled Max@K optimization:** Use SubLOO ($K \geq 2$) or Sample-LOO.
 2. **For rapid prototyping:** Leader Reward is acceptable if bias is tolerable.
-3. **For publication-quality results:** SubLOO provides the strongest theoretical guarantees.
+3. **For publication-quality results:** SubLOO provides the strongest *unbiasedness* guarantee and a clear within-subset hitchhiking-elimination property; empirical variance measurements can substantiate the expected reduction in total variance.
 
 ---
 

@@ -322,11 +322,20 @@ $$
 \sum_{i=K}^{n} w_i^2 = \frac{1}{\binom{n}{K}^2} \sum_{i=K}^{n} \binom{i-1}{K-1}^2
 $$
 
-For fixed $K$ and large $n$, using the identity $\sum_{i=K}^{n} \binom{i-1}{K-1}^2 = \binom{n}{2K-1} \cdot \frac{2K-1}{n}$ (via Vandermonde), this sum scales as:
+For fixed $K$ and large $n$, we have the scaling
 
 $$
-\sum_{i=K}^{n} w_i^2 = \Theta\left(\frac{1}{n}\right)
+\sum_{i=K}^{n} w_i^2 = \Theta\left(\frac{1}{n}\right).
 $$
+
+More precisely (heuristic/asymptotic), one can show
+
+$$
+\sum_{i=K}^{n} w_i^2 \;\approx\; \frac{K^2}{2K-1}\cdot \frac{1}{n}
+\qquad (n\to\infty,\;K\text{ fixed}),
+$$
+
+so the squared-weight mass decays like $1/n$ with a $K$-dependent constant. (A closed-form finite-$(n,K)$ identity for $\sum_{i=K}^{n} \binom{i-1}{K-1}^2$ is not used elsewhere in this task.)
 
 **Corollary 3.1 (Variance Scaling Intuition).** For fixed $K$ and large $n$, the sum of squared SubLOO weights scales as $O(1/n)$. Combined with bounded score function variance $\mathbb{E}[\|\psi\|^2] = O(1)$, this suggests (but does not rigorously prove) that $\text{Var}[\widehat{G}^{\text{SubLOO}}] = O(1/n)$.
 

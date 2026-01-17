@@ -175,7 +175,13 @@ $$
 s_i = \frac{\binom{n-1}{K-1}}{\binom{n}{K}} \times \mathbb{E}[\max_{j \in S} R_j \mid i \in S] = \frac{K}{n} \times (\text{conditional average}).
 $$
 
-This scaling factor $K/n$ is consistent: summing $s_i$ over all $i$ yields the unbiased Max@K reward estimator $\hat{\rho}^{(g)}(n,K)$.
+This scaling factor $K/n$ is consistent with the Max@K reward estimator. Summing over all samples gives
+$$
+\sum_{i=1}^{n} s_i
+= \frac{1}{\binom{n}{K}} \sum_{|S|=K} \sum_{i\in S} \max_{j\in S} R(\tau_j)
+= K \cdot \hat{\rho}^{(g)}(n,K),
+$$
+so equivalently $\hat{\rho}^{(g)}(n,K) = \frac{1}{K}\sum_{i=1}^{n} s_i$. 
 
 ### 5.1 Closed Form via Order Statistics
 

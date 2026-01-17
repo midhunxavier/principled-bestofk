@@ -330,11 +330,11 @@ $$
 }
 $$
 
-is unbiased, where $s_i$ is computed from **Eq. (4.1)** (Section 4.2) and $b_i^{\text{LOO}}$ is defined in Section 6.2.
+is unbiased, where $s_i$ is computed from the per-sample weight definition in Section 4.2 (Theorem 4.1 / Eq. for $s_i$) and $b_i^{\text{LOO}}$ is defined in Section 6.2.
 
 **Proof.** Since $b_i^{\text{LOO}}$ depends only on $\{\tau_j : j \neq i\}$, the baseline term $\mathbb{E}[b_i^{\text{LOO}} \nabla_\theta \log \pi_\theta(\tau_i)] = \mathbb{E}[b_i^{\text{LOO}}] \cdot \mathbb{E}[\nabla_\theta \log \pi_\theta(\tau_i)] = 0$ by the score function identity. $\blacksquare$
 
-**Important:** For all ranks $i$ (including $i < K$), the gradient weight $s_i$ is generally non-zero due to the "Support" term in Eq. (4.1). Only when combined with the SubLOO method (below) do low-ranked samples receive zero weight.
+**Important:** For all ranks $i$ (including $i < K$), the gradient weight $s_i$ is generally non-zero due to the "Support" term in the closed form from Section 4.2 / Proposition 5.1 (T1.2). Only when combined with the SubLOO method (below) do low-ranked samples receive zero weight.
 
 #### 6.3.2 SubLOO: Per-Subset Baseline (Hitchhiking-Free)
 
@@ -387,13 +387,13 @@ def compute_subloo_weights(sorted_rewards, n, K):
 
 ### 6.5 Variance Analysis
 
-**Proposition 6.1 (Variance Reduction).** Under mild conditions (non-constant rewards and non-degenerate baseline correlation), both variance-reduced estimators have lower or equal variance than the base estimator:
+**Proposition 6.1 (Variance Reduction; what is guaranteed vs. expected).**
 
-$$
-\text{Var}[\widehat{G}^{\text{LOO}}] \leq \text{Var}[\widehat{G}_{n,K}]
-$$
+- **Sample-LOO:** With unit coefficient, baseline subtraction reduces the *per-sample* variance contribution when the baseline is sufficiently correlated with the weight (see the explicit condition in Theorem 3.1 of T1.3). Unbiasedness is guaranteed; variance reduction is typical but not unconditional.
 
-Strict inequality holds when $\text{Cov}(s_i, b_i^{\text{LOO}}) > 0$, which is typical in practice since both depend positively on the reward distribution. The SubLOO variant typically achieves the largest variance reduction by completely eliminating hitchhiking.
+- **SubLOO:** SubLOO eliminates *within-subset* hitchhiking: in each subset $S$, only the subset maximum receives nonzero weight (the max–second-max gap). This reduces conditional variance at the subset level. However, an unconditional global guarantee $\text{Var}[\widehat{G}^{\text{SubLOO}}] \le \text{Var}[\widehat{G}_{n,K}]$ requires additional assumptions to control cross-covariance terms between different samples’ contributions (see Remark 3.2 in T1.3).
+
+**Takeaway:** both LOO variants are unbiased; both are expected to reduce variance in practice, with SubLOO typically reducing variance the most because it removes hitchhiking completely.
 
 ---
 
@@ -497,11 +497,15 @@ def maxk_pomo_gradient(policy, instance, n_starts, K):
 
 **Caveat:** The proofs in this document assume $\tau_1, \ldots, \tau_n \stackrel{\text{i.i.d.}}{\sim} \pi_\theta$. Standard POMO uses a **deterministic** set of starting nodes (all $N$ nodes for an $N$-city TSP), which means trajectories are not identically distributed—each starts from a different node.
 
-**Justification for POMO:** The i.i.d. assumption can be recovered by defining the policy distribution as:
+**Clarification for POMO (deterministic multi-start vs i.i.d.).** One way to align with the i.i.d. assumption is to define a *mixture* rollout distribution
 $$
-\pi_\theta(\tau) = \frac{1}{N} \sum_{s=1}^{N} \pi_\theta(\tau \mid \text{start}=s)
+\pi_\theta(\tau) = \frac{1}{N} \sum_{s=1}^{N} \pi_\theta(\tau \mid \text{start}=s),
 $$
-i.e., uniform sampling over starting nodes followed by policy rollout. Under this compound distribution, all $N$ POMO trajectories are exchangeable, and the U-statistic argument applies. This interpretation is implicit in standard POMO training.
+which corresponds to sampling a start node uniformly at random, then rolling out the policy.
+
+However, standard POMO typically *deterministically enumerates* all $N$ start nodes in each batch. That produces an exchangeable-but-not-i.i.d. collection of trajectories (closer to sampling starts **without replacement**). The U-statistic unbiasedness proof in T1.2 applies cleanly to the i.i.d. setting; for deterministic multi-start, you should view the estimator as optimizing the Max@K objective under that multi-start sampling scheme.
+
+In practice, the two objectives are often close when $N$ is large, but they are not identical. If strict i.i.d. correspondence is desired, one can sample starts randomly (with replacement) rather than enumerating them.
 
 ### 8.3 Handling Reward Sign
 
@@ -538,11 +542,80 @@ with $\delta \ll \min_{i \neq j} |R_i - R_j|$ for distinct rewards.
 | Result | Statement |
 |--------|-----------|
 | **Theorem 3.1** | Unbiased Max@K reward estimator: $\hat{\rho}^{(g)} = \frac{1}{\binom{n}{K}} \sum_{i=K}^{n} \binom{i-1}{K-1} R_{(i)}$ |
-| **Theorem 4.1** | Unbiased Max@K gradient with combinatorial weights |
-| **Theorem 6.1** | LOO baseline maintains unbiasedness with lower variance |
+| **Theorem 4.1** | Unbiased Max@K gradient estimator (U-statistic / per-sample form) |
+| **Theorem 6.1** | LOO baseline preserves unbiasedness; variance reduction is typical but not unconditional |
 | **Theorem 7.1** | Leader Reward is biased for Max@K objective |
 
-### 9.2 Key Equations for Implementation
+## 10. Task 1 Theorem Map (What is defined, proven, and used)
+
+This section summarizes Task 1 as a dependency graph: definitions $\to$ estimators $\to$ guarantees.
+
+### 10.1 Core Definitions
+
+1. **Max@K objective** (Definition 2.1):
+   $$
+   J_{\text{max}@K}(\theta) = \mathbb{E}_{\tau_{1:K}\stackrel{\text{i.i.d.}}{\sim}\pi_\theta}\big[\max_{j\in[K]} R(\tau_j)\big].
+   $$
+
+2. **U-statistic view** (T1.2 Lemma 3.1): average a symmetric kernel over all $K$-subsets of $n$ i.i.d. samples without bias.
+
+### 10.2 Estimators
+
+1. **Unbiased Max@K reward estimator** (Theorem 3.1): given $n\ge K$ i.i.d. samples, with sorted rewards $R_{(1)}\le\cdots\le R_{(n)}$,
+   $$
+   \hat{\rho}^{(g)}(n,K) = \frac{1}{\binom{n}{K}}\sum_{i=K}^{n} \binom{i-1}{K-1} R_{(i)}.
+   $$
+
+2. **Unbiased Max@K gradient estimator (U-statistic form)** (T1.2 Theorem 4.1 / this doc Theorem 4.1):
+   $$
+   \widehat{\nabla_\theta J}_{\text{max}@K}
+   = \frac{1}{\binom{n}{K}} \sum_{|S|=K}
+   \Big(\max_{i\in S} R(\tau_i)\Big)\Big(\sum_{j\in S}\nabla_\theta\log\pi_\theta(\tau_j)\Big).
+   $$
+
+3. **Per-sample score-weight form** (T1.2 Section 5):
+   $$
+   \widehat{\nabla_\theta J}_{\text{max}@K} = \sum_{i=1}^{n} s_i\,\nabla_\theta\log\pi_\theta(\tau_i),
+   \qquad
+   s_i := \frac{1}{\binom{n}{K}} \sum_{|S|=K,\,i\in S} \max_{j\in S} R(\tau_j).
+   $$
+   Closed form in ranks is Proposition 5.1 in T1.2.
+
+4. **Sample-LOO variance reduction** (T1.3 Theorem 2.1):
+   $$
+   \widehat{G}^{\text{Sample-LOO}} = \sum_{i=1}^{n} (s_i - b_i^{\text{LOO}})\,\nabla_\theta\log\pi_\theta(\tau_i),
+   \qquad
+   b_i^{\text{LOO}} = \hat{\rho}^{(g)}(n-1,K;\text{exclude }i),
+   $$
+   defined when $n-1\ge K$.
+
+5. **SubLOO (per-subset LOO) variance reduction** (T1.2 Proposition 6.1 / T1.3 Theorem 2.2):
+   $$
+   \widehat{G}^{\text{SubLOO}} = \frac{1}{\binom{n}{K}} \sum_{|S|=K}\sum_{i\in S}
+   \Big(\max_{j\in S}R_j - \max_{j\in S\setminus\{i\}}R_j\Big)\,\nabla_\theta\log\pi_\theta(\tau_i),
+   $$
+   defined for $K\ge 2$.
+
+### 10.3 Guarantees (and what is *not* claimed)
+
+1. **Unbiasedness**
+   - Reward estimator: proven (T1.1 Section 5.1).
+   - Base gradient estimator: proven (T1.2 Theorem 4.1).
+   - Sample-LOO and SubLOO: unbiasedness proven via baseline independence (T1.3 Section 2; T1.2 Section 6).
+
+2. **Variance reduction**
+   - Sample-LOO: variance reduction is typical but requires correlation conditions for a strict guarantee with unit coefficient (T1.3 Theorem 3.1).
+   - SubLOO: eliminates within-subset hitchhiking and reduces conditional variance per subset; a global unconditional variance inequality requires additional assumptions (T1.3 Remark 3.2).
+
+3. **Edge cases**
+   - $K=1$: reduces to standard risk-neutral REINFORCE.
+   - $K=n$: base estimator uses one subset; SubLOO reduces to max–second-max gap weighting.
+
+### 10.4 Practical alignment note (POMO)
+
+All proofs above assume i.i.d. trajectories. Deterministic multi-start (standard POMO) corresponds to a slightly different sampling scheme; see Section 8.2.1 for the exact caveat and how to recover i.i.d. if desired.
+
+### 10.5 Quick reference (Implementation equations)
 
 **Weight for $i$-th ranked sample:**
 $$
@@ -554,7 +627,7 @@ $$
 \tilde{s}_i^{\text{Sample-LOO}} = s_i - b_i^{\text{LOO}}
 $$
 
-where $s_i$ is from Eq. (4.1) and $b_i^{\text{LOO}}$ is the leave-one-out Max@K estimate.
+where $s_i$ is the per-sample Max@K gradient weight (Theorem 4.1 / Proposition 5.1 in T1.2) and $b_i^{\text{LOO}}$ is the leave-one-out Max@K estimate.
 
 **Gradient weight (SubLOO, hitchhiking-free):**
 $$
@@ -571,7 +644,7 @@ $$
 \nabla_\theta \mathcal{L}_{\text{surr}}(\theta) = -\sum_{i=1}^{n} \tilde{s}_i \nabla_\theta \log \pi_\theta(\tau_i) = \widehat{\nabla_\theta J}_{\text{max}@K}
 $$
 
-### 9.3 Computational Complexity
+### 10.6 Computational Complexity
 
 | Operation | Complexity |
 |-----------|------------|
