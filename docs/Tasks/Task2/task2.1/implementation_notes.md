@@ -54,7 +54,7 @@ w_i = \mathbf{1}[i \ge K] \cdot \frac{\binom{i-1}{K-1}}{\binom{n}{K}},
 
 Implementation is in:
 
-- `src/estimators/maxk_estimator.py`
+- `code/src/estimators/maxk_estimator.py`
 
 Public functions:
 
@@ -73,7 +73,7 @@ Tie-handling:
 
 Unit tests are in:
 
-- `tests/test_maxk_estimator.py`
+- `code/tests/test_maxk_estimator.py`
 
 The key correctness check is an **exact enumeration** reference:
 
@@ -86,7 +86,7 @@ computed via `itertools.combinations` for small `n`, and compared against `maxk_
 To run:
 
 ```bash
-python3 -m pytest tests/test_maxk_estimator.py -v
+python3 -m pytest code/tests/test_maxk_estimator.py -v
 ```
 
 ---
