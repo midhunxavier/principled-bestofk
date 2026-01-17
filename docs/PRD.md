@@ -102,23 +102,31 @@ Our principled estimator must eliminate this hitchhiking effect.
 J_maxK(θ) = E_{τ1..τK i.i.d.~π_θ}[ max_i R(τi) ]
 ```
 
-#### 4.1.2 Unbiased Gradient Estimator (from PKPO/RSPO)
-Given n ≥ k samples per instance, sorted by reward (ascending): R(τ_1) ≤ R(τ_2) ≤ ... ≤ R(τ_n)
+#### 4.1.2 Unbiased Reward + Gradient Estimators (from PKPO/RSPO)
 
-**Unbiased estimator of max@k reward:**
+Given `n ≥ k` sampled trajectories per instance, let rewards be sorted ascending:
+`R_(1) ≤ R_(2) ≤ ... ≤ R_(n)` (ties broken deterministically or with tiny noise).
+
+**Unbiased estimator of Max@k reward (Task 1.1):**
 ```
-ρ^(g)(n,k) = (1 / C(n,k)) Σ_{i=k..n} C(i−1, k−1) * R(τ_i)
+ρ^(g)(n,k) = Σ_{i=1..n} w_i * R_(i)
+
+w_i = 1[i ≥ k] * C(i−1, k−1) / C(n,k)
 ```
 
-**Unbiased gradient estimator:**
+**Unbiased gradient estimator (Task 1.2):**
 ```
-∇̂J_maxK = Σ_i s_i ∇_θ log π_θ(τ_i)
+∇̂J_maxK = Σ_{i=1..n} s_i * ∇_θ log π_θ(τ_(i))
 ```
-where `s_i` are combinatorial weights capturing marginal contribution to max@k.
+
+Important: the gradient score-weights `s_i` are *not* just `w_i * R_(i)`.
+For `k ≥ 2`, `s_i` includes a “Support” term accounting for subsets where a
+higher-ranked sample is the max (see `docs/Tasks/Task1/task1.2/unbiasedness_proof.md`).
 
 #### 4.1.3 Variance Reduction via LOO Baselines
 - Leave-one-out baselines that maintain unbiasedness
-- Per-instance baselines independent of τ_i
+- **Sample-LOO:** per-sample baseline from the other `n-1` rewards (requires `n > k`)
+- **SubLOO:** per-subset baseline (max–second-max gap; requires `k ≥ 2`)
 - Compatible with POMO-style shared baseline structure
 
 ### 4.2 NCO-Specific Adaptations
@@ -135,6 +143,9 @@ where `s_i` are combinatorial weights capturing marginal contribution to max@k.
 - POMO generates N trajectories from different starting nodes
 - Our estimator applies per-instance across these N trajectories
 - Consider: should k = N, or k < N for different objectives?
+- Note: Task 1 proofs assume i.i.d. trajectories; deterministic multi-start is
+  exchangeable but not strictly i.i.d. For strict i.i.d. correspondence, sample
+  start nodes randomly (with replacement) instead of enumerating them.
 
 #### 4.2.3 Stability Mechanisms
 - Gradient clipping (max norm)
@@ -167,14 +178,18 @@ def maxk_policy_gradient(policy, instances, n_samples, k):
         # 2. Sort by reward (ascending)
         sorted_indices = argsort(rewards)
         
-        # 3. Compute per-sample weights (marginal contribution to max@k)
-        weights = compute_maxk_weights(rewards, n_samples, k)
+        # 3. Compute per-sample gradient score-weights s_i for Max@k
+        # IMPORTANT: this is NOT the same as the reward-estimator weights w_i.
+        # See Task 1.2 for the closed form (includes the “Support” term).
+        s_weights = compute_maxk_score_weights(rewards, n_samples, k)
         
-        # 4. Apply LOO variance reduction
-        weights = apply_loo_baseline(weights, rewards)
+        # 4. Apply variance reduction (choose one)
+        # Sample-LOO: subtract b_i^LOO computed from rewards excluding i (requires n > k)
+        # SubLOO: hitchhiking-free max–second-max gap form (requires k ≥ 2)
+        s_weights = apply_loo_baseline(s_weights, rewards, n_samples, k)
         
-        # 5. Compute loss
-        loss = -sum(weights[i] * log_probs[i] for i in range(n_samples))
+        # 5. Compute loss (stop-gradient through weights)
+        loss = -sum(stop_grad(s_weights[i]) * log_probs[i] for i in range(n_samples))
         total_loss += loss
     
     return total_loss / len(instances)
@@ -365,36 +380,70 @@ principled-bestofk/
 
 ### 9.2 Key Implementation Equations
 
-#### 9.2.1 Combinatorial Weights for Max@K
+#### 9.2.1 Two Different “Weights” (Reward vs. Gradient)
 
-For n samples sorted by reward (ascending), the weight for sample i:
+Task 1 established two related-but-distinct objects.
+
+**(A) Reward-estimator weights (Task 1.1):**
+
+These weights define an unbiased estimator of the Max@k *reward* using `n` samples.
+For rewards sorted ascending, the unbiased reward estimator is
+`ρ^(g)(n,k) = Σ_i w_i R_(i)` where:
 
 ```python
-def compute_maxk_weight(i, n, k):
+def compute_reward_weight(rank_i: int, n: int, k: int) -> float:
+    """Reward-estimator weight w_i for the i-th order statistic.
+
+    Args:
+        rank_i: 1-indexed rank i after sorting rewards ascending.
+        n: Number of samples.
+        k: Max@k parameter.
+
+    Returns:
+        The scalar weight w_i.
     """
-    Weight for i-th sample (1-indexed, sorted ascending by reward).
-    Only samples i >= k contribute.
-    """
-    if i < k:
+    if rank_i < k:
         return 0.0
-    return comb(i-1, k-1) / comb(n, k)
+    return comb(rank_i - 1, k - 1) / comb(n, k)
 ```
 
-#### 9.2.2 LOO Baseline
+**(B) Gradient score-weights (Task 1.2):**
+
+The unbiased Max@k *gradient* estimator has the form
+`∇̂J_maxK = Σ_i s_i ∇ log π(τ_i)`.
+For `k ≥ 2`, `s_i` is **not** equal to `w_i * R_(i)`; it includes a “Support” term
+from subsets where a higher-ranked sample is the maximum.
+
+Implementation should follow the closed form in
+`docs/Tasks/Task1/task1.2/unbiasedness_proof.md` (Proposition 5.1).
+
+#### 9.2.2 LOO Baselines (Variance Reduction)
+
+Task 1 defines two variance-reduction options.
+
+**Sample-LOO (requires `n > k`):**
+
+Subtract a per-sample baseline `b_i^LOO` computed from the other `n-1` rewards:
 
 ```python
-def loo_baseline(weights, rewards, n, k):
+def sample_loo_weights(s_weights, rewards, n, k):
+    """Sample-level leave-one-out variance reduction.
+
+    Notes:
+        This is the correct form: (s_i - b_i^LOO), where b_i^LOO does not depend
+        on trajectory i. Do NOT use w_i * (R_i - b_i^LOO).
+
+    Requires:
+        n > k
     """
-    Leave-one-out baseline for variance reduction.
-    """
-    baseline = np.zeros(n)
-    for i in range(n):
-        # Compute max@k estimate excluding sample i
-        remaining_indices = [j for j in range(n) if j != i]
-        remaining_rewards = [rewards[j] for j in remaining_indices]
-        baseline[i] = compute_maxk_estimator(remaining_rewards, n-1, k)
-    return weights * (rewards - baseline)
+    b_loo = compute_maxk_reward_estimates_excluding_each_sample(rewards, n, k)
+    return s_weights - b_loo
 ```
+
+**SubLOO (requires `k ≥ 2`):**
+
+Per-subset leave-one-out baseline yielding hitchhiking-free gap weights.
+See `docs/Tasks/Task1/task1.3/loo_variance_reduction.md` (Proposition 2.1).
 
 ### 9.3 Hyperparameters
 
