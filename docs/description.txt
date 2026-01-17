@@ -4,4 +4,5 @@ RSPO provides ideas for this in LLM settings.
 
 refer : @llm_context_maxk_rl4co.txt 
 
+Repository note: code and dependency files are mirrored under the `code/` directory (`code/src`, `code/requirements.txt`) for structured packaging.
 

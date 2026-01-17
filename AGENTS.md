@@ -13,6 +13,12 @@ This document provides context and strict guidelines for AI agents (and human de
 Agents should adhere to this structure when creating new files:
 ```
 principled-bestofk/
+├── code/                 # Packaged code and dependencies
+│   ├── requirements.txt  # Dependency list (mirrors root)
+│   └── src/              # Source code
+│       ├── estimators/   # Core math implementations
+│       ├── algorithms/   # RL algorithms (MaxK REINFORCE)
+│       └── experiments/  # Training scripts
 ├── docs/                 # Research narrative, proofs, PRD
 ├── src/                  # Source code (to be created)
 │   ├── estimators/       # Core math implementations
@@ -29,7 +35,7 @@ Although this repository started as documentation-only, it is transitioning to c
 
 ### Environment Management
 - **Dependency Manager**: Prefer `uv` or `pip`.
-- **Install**: `pip install -r requirements.txt` (if exists) or `pip install torch rl4co`.
+- **Install**: `pip install -r code/requirements.txt` (preferred) or `pip install -r requirements.txt` or `pip install torch rl4co`.
 
 ### Testing
 - **Framework**: `pytest`

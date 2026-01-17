@@ -341,6 +341,25 @@ def maxk_policy_gradient(policy, instances, n_samples, k):
 
 ```
 principled-bestofk/
+├── code/
+│   ├── requirements.txt          # Dependency list (mirrors root)
+│   └── src/
+│       ├── estimators/
+│       │   ├── __init__.py
+│       │   ├── maxk_reward.py        # Max@K reward estimator
+│       │   ├── maxk_gradient.py      # Gradient weights
+│       │   └── baselines.py          # LOO baselines
+│       ├── algorithms/
+│       │   ├── __init__.py
+│       │   ├── maxk_reinforce.py     # MaxK REINFORCE
+│       │   └── leader_reward.py      # Baseline implementation
+│       ├── utils/
+│       │   ├── sorting.py
+│       │   └── combinatorics.py      # C(n,k) etc.
+│       └── experiments/
+│           ├── train_tsp.py
+│           ├── train_cvrp.py
+│           └── evaluate.py
 ├── docs/
 │   ├── PRD.md                    # This document
 │   ├── mathematical_derivation.md
@@ -349,23 +368,7 @@ principled-bestofk/
 ├── knowledgebase/
 │   ├── llm_context_maxk_rl4co.txt
 │   └── papers/
-├── src/
-│   ├── estimators/
-│   │   ├── __init__.py
-│   │   ├── maxk_reward.py        # Max@K reward estimator
-│   │   ├── maxk_gradient.py      # Gradient weights
-│   │   └── baselines.py          # LOO baselines
-│   ├── algorithms/
-│   │   ├── __init__.py
-│   │   ├── maxk_reinforce.py     # MaxK REINFORCE
-│   │   └── leader_reward.py      # Baseline implementation
-│   ├── utils/
-│   │   ├── sorting.py
-│   │   └── combinatorics.py      # C(n,k) etc.
-│   └── experiments/
-│       ├── train_tsp.py
-│       ├── train_cvrp.py
-│       └── evaluate.py
+├── src/                          # Legacy source root (mirrors code/src)
 ├── tests/
 │   ├── test_estimators.py
 │   └── test_algorithms.py
@@ -492,4 +495,3 @@ See `docs/Tasks/Task1/task1.3/loo_variance_reduction.md` (Proposition 2.1).
 **Document Owner:** Research Team  
 **Next Review:** Week 2 checkpoint  
 **Approval Status:** Pending
-
