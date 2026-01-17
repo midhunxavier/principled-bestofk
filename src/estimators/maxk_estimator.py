@@ -18,6 +18,29 @@ from typing import Optional
 
 import torch
 
+# Module-level caches to avoid recomputing binomial weights.
+#
+# Keys:
+# - _WEIGHT_VALUES_CACHE: (n, k) -> tuple of Python floats (CPU)
+# - _WEIGHT_TENSOR_CACHE: (n, k, device_str, dtype) -> torch.Tensor
+#
+# Note: Returned tensors should be treated as read-only. If callers mutate the
+# returned tensor in-place, future calls may observe the mutation.
+_WEIGHT_VALUES_CACHE: dict[tuple[int, int], tuple[float, ...]] = {}
+_WEIGHT_TENSOR_CACHE: dict[tuple[int, int, str, torch.dtype], torch.Tensor] = {}
+
+
+def _device_to_key(device: Optional[torch.device]) -> str:
+    return "cpu" if device is None else str(device)
+
+
+def _validate_floating_dtype(dtype: torch.dtype) -> None:
+    """Raise ValueError if dtype is not floating point."""
+    try:
+        torch.finfo(dtype)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"dtype must be floating point, got {dtype}") from exc
+
 
 def maxk_reward_weights(
     n: int,
@@ -41,29 +64,42 @@ def maxk_reward_weights(
         n: Number of samples.
         k: The K in Max@K (1 <= k <= n).
         device: Target device for the tensor.
-        dtype: Target dtype (defaults to float64 for numerical precision).
+        dtype: Floating dtype for the returned tensor (defaults to float64).
 
     Returns:
         Tensor of shape [n] with weights summing to 1.
 
     Raises:
-        ValueError: If k < 1 or k > n.
+        ValueError: If n < 1, if k is out of range, or if dtype is not floating.
     """
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got n={n}")
     if k < 1 or k > n:
         raise ValueError(f"k must satisfy 1 <= k <= n, got k={k}, n={n}")
 
     if dtype is None:
         dtype = torch.float64
+    _validate_floating_dtype(dtype)
 
-    # Compute C(n, k) once
-    c_n_k = math.comb(n, k)
+    values_key = (n, k)
+    weights_values = _WEIGHT_VALUES_CACHE.get(values_key)
+    if weights_values is None:
+        c_n_k = math.comb(n, k)
 
-    weights = torch.zeros(n, dtype=dtype, device=device)
+        # Build weights on CPU as Python floats.
+        weights_list = [0.0] * n
+        for i in range(k, n + 1):
+            weights_list[i - 1] = math.comb(i - 1, k - 1) / c_n_k
+        weights_values = tuple(weights_list)
+        _WEIGHT_VALUES_CACHE[values_key] = weights_values
 
-    # Fill weights for ranks k..n (1-indexed), i.e., indices k-1..n-1 (0-indexed)
-    for i in range(k, n + 1):  # i is 1-indexed rank
-        c_i_minus_1_k_minus_1 = math.comb(i - 1, k - 1)
-        weights[i - 1] = c_i_minus_1_k_minus_1 / c_n_k
+    tensor_key = (n, k, _device_to_key(device), dtype)
+    weights = _WEIGHT_TENSOR_CACHE.get(tensor_key)
+    if weights is None:
+        weights = torch.tensor(weights_values, dtype=dtype)
+        if device is not None:
+            weights = weights.to(device)
+        _WEIGHT_TENSOR_CACHE[tensor_key] = weights
 
     return weights
 
@@ -87,18 +123,19 @@ def maxk_reward_estimate(
 
     Args:
         rewards: Tensor of shape [n] or [batch, n] containing reward values.
+            Non-floating tensors are converted to float64 for computation.
         k: The K in Max@K objective (1 <= k <= n).
         stable_sort: If True, use stable sorting (deterministic tie-breaking by
             original index). Default True.
 
     Returns:
         Scalar tensor if input is [n], or tensor of shape [batch] if input is
-        [batch, n].
+        [batch, n]. Output dtype matches input for floating tensors; otherwise
+        it is float64.
 
     Raises:
-        ValueError: If k is out of valid range.
+        ValueError: If rewards has invalid shape or k is out of range.
     """
-    # Handle 1D input by adding batch dimension
     squeeze_output = False
     if rewards.ndim == 1:
         rewards = rewards.unsqueeze(0)
@@ -107,18 +144,21 @@ def maxk_reward_estimate(
     if rewards.ndim != 2:
         raise ValueError(f"rewards must be 1D or 2D, got ndim={rewards.ndim}")
 
-    batch_size, n = rewards.shape
+    n = rewards.shape[-1]
 
     if k < 1 or k > n:
         raise ValueError(f"k must satisfy 1 <= k <= n, got k={k}, n={n}")
 
-    # Sort rewards ascending along sample dimension
-    sorted_rewards, _ = torch.sort(rewards, dim=-1, stable=stable_sort)
+    compute_rewards = rewards
+    if not compute_rewards.is_floating_point():
+        compute_rewards = compute_rewards.to(torch.float64)
 
-    # Get weights (computed on CPU with math.comb, then moved to device)
-    weights = maxk_reward_weights(n, k, device=rewards.device, dtype=rewards.dtype)
+    sorted_rewards, _ = torch.sort(compute_rewards, dim=-1, stable=stable_sort)
 
-    # Compute weighted sum: [batch, n] * [n] -> [batch, n] -> sum -> [batch]
+    weights = maxk_reward_weights(
+        n, k, device=sorted_rewards.device, dtype=sorted_rewards.dtype
+    )
+
     estimate = (sorted_rewards * weights).sum(dim=-1)
 
     if squeeze_output:
