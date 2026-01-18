@@ -107,6 +107,18 @@ class TestSampleLOO:
         with pytest.raises(ValueError, match="must have the same shape"):
             apply_sample_loo(s_weights, rewards, k=1)
 
+    def test_invalid_ndim_raises(self) -> None:
+        """Should raise ValueError for 3D+ input."""
+        rewards = torch.randn(2, 3, 4)
+        with pytest.raises(ValueError, match="must be 1D or 2D"):
+            sample_loo_baseline(rewards, k=1)
+
+    def test_non_float_inputs_upcast(self) -> None:
+        """Non-floating rewards should upcast to float64."""
+        rewards = torch.tensor([1, 2, 3, 4], dtype=torch.int64)
+        baselines = sample_loo_baseline(rewards, k=1)
+        assert baselines.dtype == torch.float64
+
 
 class TestSubLOO:
     """Tests for SubLOO weights."""
@@ -149,6 +161,18 @@ class TestSubLOO:
             subloo_weights(rewards, k=1)
         with pytest.raises(ValueError, match="k must satisfy"):
             subloo_weights(rewards, k=4)
+
+    def test_invalid_ndim_raises(self) -> None:
+        """Should raise ValueError for 3D+ input."""
+        rewards = torch.randn(2, 3, 4)
+        with pytest.raises(ValueError, match="must be 1D or 2D"):
+            subloo_weights(rewards, k=2)
+
+    def test_non_float_inputs_upcast(self) -> None:
+        """Non-floating rewards should upcast to float64."""
+        rewards = torch.tensor([1, 2, 3, 4], dtype=torch.int64)
+        weights = subloo_weights(rewards, k=2)
+        assert weights.dtype == torch.float64
 
 
 if __name__ == "__main__":

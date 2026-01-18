@@ -94,6 +94,11 @@ class TestMaxKRewardWeights:
         weights = maxk_reward_weights(5, 2, device=torch.device("cpu"))
         assert weights.device == torch.device("cpu")
 
+    def test_invalid_dtype_raises(self) -> None:
+        """Should raise ValueError for non-floating dtype."""
+        with pytest.raises(ValueError, match="dtype must be floating"):
+            maxk_reward_weights(5, 2, dtype=torch.int64)
+
 
 class TestMaxKRewardEstimate:
     """Tests for maxk_reward_estimate function."""
@@ -198,6 +203,12 @@ class TestMaxKRewardEstimate:
             assert estimates[i] <= estimates[i + 1] + 1e-10, (
                 f"Not monotonic: k={i + 1} -> {estimates[i]}, k={i + 2} -> {estimates[i + 1]}"
             )
+
+    def test_non_float_inputs_upcast(self) -> None:
+        """Non-floating rewards should upcast to float64."""
+        rewards = torch.tensor([1, 2, 3, 4], dtype=torch.int64)
+        estimate = maxk_reward_estimate(rewards, k=2)
+        assert estimate.dtype == torch.float64
 
 
 class TestSpecificExamples:
