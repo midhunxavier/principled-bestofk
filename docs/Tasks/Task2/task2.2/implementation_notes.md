@@ -1,7 +1,7 @@
 # Task 2.2 — Max@K Gradient Score Weights (Implementation Notes)
 
 **Task:** T2.2 — Implement gradient weight computation  
-**Status:** Planned / Notes updated  
+**Status:** Complete  
 **Date:** January 18, 2026  
 
 ---
@@ -85,15 +85,15 @@ Special cases:
 
 ---
 
-## 5. Intended API (PyTorch)
+## 5. Code Location and API (PyTorch)
 
-Recommended module:
+Implementation is in:
 
-- `src/estimators/maxk_gradient.py` (or keep under `src/estimators/maxk_reward.py` if consolidating)
+- `code/src/estimators/maxk_gradient.py`
 
-Functions:
+Public function:
 
-- `maxk_score_weights(rewards: torch.Tensor, k: int, *, stable_sort: bool = True) -> torch.Tensor`
+- `maxk_gradient_weights(rewards: torch.Tensor, k: int, *, stable_sort: bool = True) -> torch.Tensor`
   - Input rewards: `[n]` or `[batch, n]`
   - Output: weights `[n]` or `[batch, n]` aligned with original sample order
 
@@ -109,9 +109,10 @@ Notes:
 
 ---
 
-## 6. Test Strategy (T2.4 dependency)
+## 6. Tests
 
-- For small \((n,K)\), verify `maxk_score_weights` equals the exact enumeration definition:
+- Unit tests are in `code/tests/test_maxk_gradient.py`.
+- For small \((n,K)\), verify `maxk_gradient_weights` equals the exact enumeration definition:
 
 ```math
 s_i = \frac{1}{\binom{n}{K}} \sum_{\substack{|S|=K\\i\in S}} \max_{j\in S} R_j

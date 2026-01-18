@@ -1,7 +1,7 @@
 # Task 2.3 — LOO Baselines for Max@K (Implementation Notes)
 
 **Task:** T2.3 — Implement LOO variance reduction baseline  
-**Status:** Planned / Notes updated  
+**Status:** Complete  
 **Date:** January 18, 2026  
 
 ---
@@ -72,25 +72,29 @@ Closed form (Proposition 2.1 in Task 1.3) gives the effective per-sample weights
 
 ---
 
-## 3. Intended API (PyTorch)
+## 3. Code Location and API (PyTorch)
 
-Recommended module:
+Implementation is in:
 
-- `src/estimators/baselines.py`
+- `code/src/estimators/baselines.py`
 
 Functions:
 
+- `sample_loo_baseline(rewards: torch.Tensor, k: int, *, stable_sort: bool = True) -> torch.Tensor`
+  - Returns `b_i^LOO` in original sample order.
 - `apply_sample_loo(s: torch.Tensor, rewards: torch.Tensor, k: int, *, stable_sort: bool = True) -> torch.Tensor`
   - Returns `s - b_loo` in original sample order.
   - Must validate `n > k`.
 
-- `subloo_score_weights(rewards: torch.Tensor, k: int, *, stable_sort: bool = True) -> torch.Tensor`
+- `subloo_weights(rewards: torch.Tensor, k: int, *, stable_sort: bool = True) -> torch.Tensor`
   - Returns hitchhiking-free weights \(\tilde{s}^{\mathrm{SubLOO}}\) (already baseline-adjusted), in original sample order.
   - Must validate `k >= 2`.
 
 ---
 
 ## 4. Test Strategy (T2.4 dependency)
+
+Unit tests are in `code/tests/test_baselines.py`.
 
 ### Sample-LOO tests
 

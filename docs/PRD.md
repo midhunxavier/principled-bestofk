@@ -172,24 +172,22 @@ def maxk_policy_gradient(policy, instances, n_samples, k):
     for instance in instances:
         # 1. Sample n trajectories
         trajectories = [policy.sample(instance) for _ in range(n_samples)]
-        rewards = [compute_reward(τ) for τ in trajectories]
-        log_probs = [policy.log_prob(τ) for τ in trajectories]
-        
-        # 2. Sort by reward (ascending)
-        sorted_indices = argsort(rewards)
-        
-        # 3. Compute per-sample gradient score-weights s_i for Max@k
+        rewards = torch.stack([compute_reward(τ) for τ in trajectories])  # [n_samples]
+        log_probs = torch.stack([policy.log_prob(τ) for τ in trajectories])  # [n_samples]
+
+        # 2. Compute per-sample gradient score-weights s_i for Max@k
         # IMPORTANT: this is NOT the same as the reward-estimator weights w_i.
         # See Task 1.2 for the closed form (includes the “Support” term).
-        s_weights = compute_maxk_score_weights(rewards, n_samples, k)
-        
-        # 4. Apply variance reduction (choose one)
+        s_weights = maxk_gradient_weights(rewards, k)
+
+        # 3. Apply variance reduction (choose one)
         # Sample-LOO: subtract b_i^LOO computed from rewards excluding i (requires n > k)
         # SubLOO: hitchhiking-free max–second-max gap form (requires k ≥ 2)
-        s_weights = apply_loo_baseline(s_weights, rewards, n_samples, k)
-        
-        # 5. Compute loss (stop-gradient through weights)
-        loss = -sum(stop_grad(s_weights[i]) * log_probs[i] for i in range(n_samples))
+        s_weights = apply_sample_loo(s_weights, rewards, k)  # Sample-LOO
+        # OR: s_weights = subloo_weights(rewards, k)          # SubLOO
+
+        # 4. Compute loss (stop-gradient through weights)
+        loss = -(s_weights.detach() * log_probs).sum()
         total_loss += loss
     
     return total_loss / len(instances)
@@ -258,11 +256,11 @@ def maxk_policy_gradient(policy, instances, n_samples, k):
 
 | Task ID | Task | Deliverable |
 |---------|------|-------------|
-| T2.1 | Implement MaxK reward estimator | `maxk_reward.py` |
-| T2.2 | Implement gradient weight computation | Weight functions |
-| T2.3 | Implement LOO baseline | Baseline module |
-| T2.4 | Unit tests for all components | Test suite |
-| T2.5 | Validate against PKPO/RSPO formulas | Numerical verification |
+| T2.1 | Implement MaxK reward estimator | `code/src/estimators/maxk_reward.py` |
+| T2.2 | Implement gradient weight computation | `code/src/estimators/maxk_gradient.py` |
+| T2.3 | Implement LOO baseline | `code/src/estimators/baselines.py` |
+| T2.4 | Unit tests for all components | `code/tests/test_maxk_reward.py`, `code/tests/test_maxk_gradient.py`, `code/tests/test_baselines.py` |
+| T2.5 | Validate against PKPO/RSPO formulas | `code/tests/test_pkpo_rspo_validation.py` |
 
 ### 6.3 Phase 3: RL4CO Integration (Week 5-6)
 
@@ -361,13 +359,18 @@ principled-bestofk/
 │   │       ├── train_cvrp.py
 │   │       └── evaluate.py
 │   └── tests/
-│       ├── test_estimators.py
-│       └── test_algorithms.py
+│       ├── conftest.py
+│       ├── test_maxk_reward.py
+│       ├── test_maxk_gradient.py
+│       ├── test_baselines.py
+│       ├── test_pkpo_rspo_validation.py
+│       └── test_stability.py
 ├── docs/
 │   ├── PRD.md                    # This document
-│   ├── mathematical_derivation.md
-│   └── tasks/
-│       └── {task_folders}/
+│   ├── description.txt
+│   └── Tasks/
+│       ├── Task1/
+│       └── Task2/
 ├── knowledgebase/
 │   ├── llm_context_maxk_rl4co.txt
 │   └── papers/

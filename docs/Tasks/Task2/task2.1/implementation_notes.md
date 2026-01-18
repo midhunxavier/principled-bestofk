@@ -73,7 +73,7 @@ Tie-handling:
 
 Unit tests are in:
 
-- `code/tests/test_maxk_estimator.py`
+- `code/tests/test_maxk_reward.py`
 
 The key correctness check is an **exact enumeration** reference:
 
@@ -86,7 +86,7 @@ computed via `itertools.combinations` for small `n`, and compared against `maxk_
 To run:
 
 ```bash
-python3 -m pytest code/tests/test_maxk_estimator.py -v
+python3 -m pytest code/tests/test_maxk_reward.py -v
 ```
 
 ---
