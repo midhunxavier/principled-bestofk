@@ -105,6 +105,12 @@ class TestMaxKGradientWeights:
         with pytest.raises(ValueError, match="must be 1D or 2D"):
             maxk_gradient_weights(rewards, k=2)
 
+    def test_non_float_inputs_upcast(self) -> None:
+        """Non-floating rewards should upcast to float64."""
+        rewards = torch.tensor([1, 2, 3, 4], dtype=torch.int64)
+        weights = maxk_gradient_weights(rewards, k=2)
+        assert weights.dtype == torch.float64
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
