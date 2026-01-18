@@ -12,7 +12,7 @@ import math
 import pytest
 import torch
 
-from src.estimators.maxk_estimator import maxk_reward_estimate, maxk_reward_weights
+from src.estimators.maxk_reward import maxk_reward_estimate, maxk_reward_weights
 
 
 def exact_maxk_reward_enumeration(rewards: list[float], k: int) -> float:

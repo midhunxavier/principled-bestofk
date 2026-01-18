@@ -119,6 +119,20 @@ class TestSampleLOO:
         baselines = sample_loo_baseline(rewards, k=1)
         assert baselines.dtype == torch.float64
 
+    def test_large_n_float32_is_finite(self) -> None:
+        """Should not overflow for n=128, k=64 in float32."""
+        n = 128
+        k = 64
+        rewards = torch.full((n,), 100.0, dtype=torch.float32)
+        baselines = sample_loo_baseline(rewards, k=k)
+
+        assert baselines.dtype == torch.float32
+        assert baselines.shape == rewards.shape
+        assert torch.isfinite(baselines).all()
+        assert torch.allclose(
+            baselines, torch.full_like(rewards, 100.0), atol=1e-3, rtol=1e-3
+        )
+
 
 class TestSubLOO:
     """Tests for SubLOO weights."""
@@ -173,6 +187,20 @@ class TestSubLOO:
         rewards = torch.tensor([1, 2, 3, 4], dtype=torch.int64)
         weights = subloo_weights(rewards, k=2)
         assert weights.dtype == torch.float64
+
+    def test_large_n_float32_is_finite(self) -> None:
+        """Should not overflow for n=128, k=64 in float32."""
+        n = 128
+        k = 64
+        rewards = torch.full((n,), 100.0, dtype=torch.float32)
+        weights = subloo_weights(rewards, k=k)
+
+        assert weights.dtype == torch.float32
+        assert weights.shape == rewards.shape
+        assert torch.isfinite(weights).all()
+        assert torch.allclose(
+            weights, torch.zeros_like(weights), atol=1e-3, rtol=0.0
+        )
 
 
 if __name__ == "__main__":

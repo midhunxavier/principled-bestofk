@@ -102,7 +102,7 @@ For `K ≥ 2`, SubLOO yields hitchhiking-free “marginal contribution” weight
 
 Core implementations:
 
-- `code/src/estimators/maxk_estimator.py`
+- `code/src/estimators/maxk_reward.py`
 - `code/src/estimators/maxk_gradient.py`
 - `code/src/estimators/baselines.py`
 
@@ -122,4 +122,3 @@ python3 -m pytest code/tests/test_pkpo_rspo_validation.py -v
 
 - Tests use `torch.float64` and tight tolerances (`atol=1e-12`) to catch off-by-one combinatorial errors.
 - Sorting uses `torch.sort(..., stable=True)` (deterministic tie-breaking) consistent with the estimator implementations.
-

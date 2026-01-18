@@ -89,7 +89,7 @@ Special cases:
 
 Recommended module:
 
-- `src/estimators/maxk_gradient.py` (or keep under `src/estimators/maxk_estimator.py` if consolidating)
+- `src/estimators/maxk_gradient.py` (or keep under `src/estimators/maxk_reward.py` if consolidating)
 
 Functions:
 

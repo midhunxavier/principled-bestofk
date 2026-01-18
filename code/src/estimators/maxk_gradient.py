@@ -21,22 +21,14 @@ from typing import Optional
 
 import torch
 
+_INTERNAL_DTYPE = torch.float64
+
 _COEFF_VALUES_CACHE: dict[tuple[int, int], tuple[tuple[float, ...], tuple[float, ...]]] = {}
-_COEFF_TENSOR_CACHE: dict[
-    tuple[int, int, str, torch.dtype], tuple[torch.Tensor, torch.Tensor]
-] = {}
+_COEFF_TENSOR_CACHE: dict[tuple[int, int, str], tuple[torch.Tensor, torch.Tensor]] = {}
 
 
 def _device_to_key(device: Optional[torch.device]) -> str:
     return "cpu" if device is None else str(device)
-
-
-def _validate_floating_dtype(dtype: torch.dtype) -> None:
-    """Raise ValueError if dtype is not floating point."""
-    try:
-        torch.finfo(dtype)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"dtype must be floating point, got {dtype}") from exc
 
 
 def _gradient_coefficients(
@@ -44,9 +36,20 @@ def _gradient_coefficients(
     k: int,
     *,
     device: Optional[torch.device],
-    dtype: torch.dtype,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return cached win/support coefficient tensors for given (n, k)."""
+    """Return cached win/support coefficient tensors for given (n, k).
+
+    Coefficients are always stored as float64 to avoid overflow in float32 when
+    n is large (e.g., n=128) and rewards are not tiny.
+
+    Args:
+        n: Number of samples.
+        k: The K in Max@K objective.
+        device: Target device for the tensors.
+
+    Returns:
+        Tuple (win_coeff, support_coeff), each a float64 tensor of shape [n].
+    """
     values_key = (n, k)
     coeff_values = _COEFF_VALUES_CACHE.get(values_key)
     if coeff_values is None:
@@ -61,14 +64,14 @@ def _gradient_coefficients(
         coeff_values = (tuple(win_coeff_values), tuple(support_coeff_values))
         _COEFF_VALUES_CACHE[values_key] = coeff_values
 
-    tensor_key = (n, k, _device_to_key(device), dtype)
+    tensor_key = (n, k, _device_to_key(device))
     coeff_tensors = _COEFF_TENSOR_CACHE.get(tensor_key)
     if coeff_tensors is None:
-        win_coeff_tensor = torch.tensor(coeff_values[0], dtype=dtype)
-        support_coeff_tensor = torch.tensor(coeff_values[1], dtype=dtype)
+        kwargs = {"dtype": _INTERNAL_DTYPE}
         if device is not None:
-            win_coeff_tensor = win_coeff_tensor.to(device)
-            support_coeff_tensor = support_coeff_tensor.to(device)
+            kwargs["device"] = device
+        win_coeff_tensor = torch.tensor(coeff_values[0], **kwargs)
+        support_coeff_tensor = torch.tensor(coeff_values[1], **kwargs)
         coeff_tensors = (win_coeff_tensor, support_coeff_tensor)
         _COEFF_TENSOR_CACHE[tensor_key] = coeff_tensors
 
@@ -93,6 +96,8 @@ def maxk_gradient_weights(
     Args:
         rewards: Tensor of shape [n] or [batch, n] containing reward values.
             Non-floating tensors are converted to float64 for computation.
+            For numerical stability, computations for k>=2 are performed in
+            float64 regardless of input dtype, and cast back at the end.
         k: The K in Max@K objective (1 <= k <= n).
         stable_sort: If True, use stable sorting (deterministic tie-breaking by
             original index). Default True.
@@ -117,23 +122,25 @@ def maxk_gradient_weights(
     if k < 1 or k > n:
         raise ValueError(f"k must satisfy 1 <= k <= n, got k={k}, n={n}")
 
+    output_dtype = rewards.dtype if rewards.is_floating_point() else torch.float64
+
     compute_rewards = rewards
     if not compute_rewards.is_floating_point():
-        compute_rewards = compute_rewards.to(torch.float64)
+        compute_rewards = compute_rewards.to(_INTERNAL_DTYPE)
 
     if k == 1:
         weights = compute_rewards / n
+        if weights.dtype != output_dtype:
+            weights = weights.to(output_dtype)
         return weights.squeeze(0) if squeeze_output else weights
-
-    dtype = compute_rewards.dtype
-    _validate_floating_dtype(dtype)
 
     sorted_rewards, sorted_indices = torch.sort(
         compute_rewards, dim=-1, stable=stable_sort
     )
+    sorted_rewards = sorted_rewards.to(_INTERNAL_DTYPE)
 
     win_coeff, support_coeff = _gradient_coefficients(
-        n, k, device=sorted_rewards.device, dtype=dtype
+        n, k, device=sorted_rewards.device
     )
 
     win_term = win_coeff * sorted_rewards
@@ -143,10 +150,13 @@ def maxk_gradient_weights(
     support_term = torch.zeros_like(sorted_rewards)
     support_term[..., :-1] = suffix_inclusive[..., 1:]
 
-    normalizer = math.comb(n, k)
-    s_sorted = (win_term + support_term) / normalizer
+    inv_normalizer = 1.0 / math.comb(n, k)
+    s_sorted = (win_term + support_term) * inv_normalizer
 
     weights = torch.zeros_like(s_sorted)
     weights.scatter_(-1, sorted_indices, s_sorted)
+
+    if weights.dtype != output_dtype:
+        weights = weights.to(output_dtype)
 
     return weights.squeeze(0) if squeeze_output else weights

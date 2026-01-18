@@ -111,6 +111,20 @@ class TestMaxKGradientWeights:
         weights = maxk_gradient_weights(rewards, k=2)
         assert weights.dtype == torch.float64
 
+    def test_large_n_float32_is_finite(self) -> None:
+        """Should not overflow for n=128, k=64 in float32."""
+        n = 128
+        k = 64
+        rewards = torch.full((n,), 100.0, dtype=torch.float32)
+        weights = maxk_gradient_weights(rewards, k=k)
+
+        assert weights.dtype == torch.float32
+        assert weights.shape == rewards.shape
+        assert torch.isfinite(weights).all()
+
+        expected = torch.full_like(rewards, 100.0 * k / n)
+        assert torch.allclose(weights, expected, atol=1e-3, rtol=1e-3)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

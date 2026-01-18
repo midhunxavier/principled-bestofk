@@ -4,7 +4,7 @@ from src.estimators.baselines import (
     sample_loo_baseline,
     subloo_weights,
 )
-from src.estimators.maxk_estimator import maxk_reward_estimate, maxk_reward_weights
+from src.estimators.maxk_reward import maxk_reward_estimate, maxk_reward_weights
 from src.estimators.maxk_gradient import maxk_gradient_weights
 
 __all__ = [

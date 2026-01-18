@@ -54,7 +54,7 @@ w_i = \mathbf{1}[i \ge K] \cdot \frac{\binom{i-1}{K-1}}{\binom{n}{K}},
 
 Implementation is in:
 
-- `code/src/estimators/maxk_estimator.py`
+- `code/src/estimators/maxk_reward.py`
 
 Public functions:
 

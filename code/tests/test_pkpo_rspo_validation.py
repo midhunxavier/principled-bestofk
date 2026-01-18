@@ -17,7 +17,7 @@ import pytest
 import torch
 
 from src.estimators.baselines import sample_loo_baseline, subloo_weights
-from src.estimators.maxk_estimator import maxk_reward_estimate
+from src.estimators.maxk_reward import maxk_reward_estimate
 from src.estimators.maxk_gradient import maxk_gradient_weights
 
 
@@ -254,4 +254,3 @@ class TestPKPOAndRSPOFormulaValidation:
         s = maxk_gradient_weights(rewards, k)
         rho = maxk_reward_estimate(rewards, k)
         assert torch.allclose(s.sum(), torch.tensor(k, dtype=s.dtype) * rho, atol=1e-12)
-

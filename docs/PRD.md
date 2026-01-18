@@ -258,7 +258,7 @@ def maxk_policy_gradient(policy, instances, n_samples, k):
 
 | Task ID | Task | Deliverable |
 |---------|------|-------------|
-| T2.1 | Implement MaxK reward estimator | `maxk_estimator.py` |
+| T2.1 | Implement MaxK reward estimator | `maxk_reward.py` |
 | T2.2 | Implement gradient weight computation | Weight functions |
 | T2.3 | Implement LOO baseline | Baseline module |
 | T2.4 | Unit tests for all components | Test suite |
