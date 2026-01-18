@@ -50,26 +50,26 @@ def _gradient_coefficients(
     values_key = (n, k)
     coeff_values = _COEFF_VALUES_CACHE.get(values_key)
     if coeff_values is None:
-        win_coeff = [0.0] * n
-        support_coeff = [0.0] * n
+        win_coeff_values: list[float] = [0.0] * n
+        support_coeff_values: list[float] = [0.0] * n
         for idx in range(n):
             rank = idx + 1
             if rank >= k:
-                win_coeff[idx] = math.comb(rank - 1, k - 1)
+                win_coeff_values[idx] = math.comb(rank - 1, k - 1)
             if rank >= 2:
-                support_coeff[idx] = math.comb(rank - 2, k - 2)
-        coeff_values = (tuple(win_coeff), tuple(support_coeff))
+                support_coeff_values[idx] = math.comb(rank - 2, k - 2)
+        coeff_values = (tuple(win_coeff_values), tuple(support_coeff_values))
         _COEFF_VALUES_CACHE[values_key] = coeff_values
 
     tensor_key = (n, k, _device_to_key(device), dtype)
     coeff_tensors = _COEFF_TENSOR_CACHE.get(tensor_key)
     if coeff_tensors is None:
-        win_coeff = torch.tensor(coeff_values[0], dtype=dtype)
-        support_coeff = torch.tensor(coeff_values[1], dtype=dtype)
+        win_coeff_tensor = torch.tensor(coeff_values[0], dtype=dtype)
+        support_coeff_tensor = torch.tensor(coeff_values[1], dtype=dtype)
         if device is not None:
-            win_coeff = win_coeff.to(device)
-            support_coeff = support_coeff.to(device)
-        coeff_tensors = (win_coeff, support_coeff)
+            win_coeff_tensor = win_coeff_tensor.to(device)
+            support_coeff_tensor = support_coeff_tensor.to(device)
+        coeff_tensors = (win_coeff_tensor, support_coeff_tensor)
         _COEFF_TENSOR_CACHE[tensor_key] = coeff_tensors
 
     return coeff_tensors
