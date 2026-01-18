@@ -75,7 +75,7 @@ class TestMaxKGradientWeights:
         """For k=n, all weights should equal max reward."""
         rewards = torch.tensor([1.0, 5.0, 2.0, 4.0], dtype=torch.float64)
         weights = maxk_gradient_weights(rewards, k=4)
-        expected = torch.full_like(rewards, rewards.max())
+        expected = torch.full_like(rewards, rewards.max().item())
         assert torch.allclose(weights, expected)
 
     def test_batched_input(self) -> None:
