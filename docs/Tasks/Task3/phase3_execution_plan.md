@@ -1,8 +1,8 @@
 # Task 3 — Phase 3 Execution Plan: RL4CO Integration (Week 5–6)
 
 **Phase:** 3 (RL4CO Integration)  
-**Scope:** T3.1–T3.5 from `docs/PRD.md`  
-**Status:** In progress (T3.1–T3.4 implemented)  
+**Scope:** T3.1–T3.6 from `docs/PRD.md`  
+**Status:** Implemented (T3.1–T3.6)  
 **Owner:** Research Team  
 **Last updated:** 2026-01-19  
 
@@ -19,6 +19,7 @@ Concretely, Phase 3 delivers:
 - Stability mechanisms (clipping, scaling/normalization options, logging).
 - A Leader Reward baseline (for apples-to-apples comparison).
 - Evaluation scripts to benchmark Max@K metrics at inference.
+- Gradient diagnostics scripts (variance/ESS) to compare estimator quality.
 
 ---
 
@@ -313,9 +314,6 @@ Evaluation should:
   - best-of-K reward for sampling-based evaluation
   - runtime / throughput
 - Save structured results (e.g., `.pkl` or `.jsonl`) in a stable schema.
-- (Research/Phase 4 alignment) Provide gradient-quality diagnostics:
-  - weight concentration (ESS-style) for the per-sample loss weights/advantages
-  - gradient variance proxy across repeated resampling (same instances, different RNG)
 
 #### 5.5.2 Implementation approach
 
@@ -329,14 +327,50 @@ Because RL4CO’s CLI `rl4co/tasks/eval.py` only loads models defined in `rl4co.
 
 - `code/src/experiments/evaluate.py`
   - CLI args: `--problem`, `--ckpt_path`, `--algorithm`, `--method`, `--k_eval`, `--num_instances`, `--seed`, `--device`, `--save_path`
-- `code/src/experiments/diagnose_gradients.py`
-  - CLI args: `--problem`, `--ckpt_path`, `--algorithm`, `--num_instances`, `--batch_size`, `--num_replicates`, `--seed`, `--device`, `--save_path`
 - Documented example commands in the script docstring.
 
 #### 5.5.4 Done when
 
 - We can evaluate all algorithms on TSP50 test set and save results deterministically.
 - The evaluation reports **best-of-K** when using sampling (matches the Phase 4 metric needs).
+
+---
+
+### 5.6 T3.6 — Gradient diagnostics harness (variance/ESS diagnostics scripts)
+
+**Goal:** Measure estimator quality signals (variance reduction, weight concentration) to support Phase 4 comparisons beyond final tour length.
+
+#### 5.6.1 Requirements
+
+Diagnostics should:
+
+- Load a checkpoint for a given algorithm.
+- Use a fixed set of instances (seeded) and repeat gradient computation across `R` replicates with different RNG seeds.
+- Report:
+  - gradient variance proxy (e.g., across replicates via gradient norm + fixed random projection)
+  - ESS-style weight/advantage concentration diagnostics
+  - runtime
+- Save structured results (e.g., `.pkl` or `.jsonl`) in a stable schema.
+
+#### 5.6.2 Implementation approach
+
+- Reuse the same checkpoint loading approach as T3.5.
+- For each replicate:
+  - run a forward pass in `phase="train"` to obtain `reward` and `log_likelihood`
+  - compute the algorithm-specific loss weights/advantages
+  - backprop once and record summary gradient statistics
+
+#### 5.6.3 Deliverables
+
+- `code/src/experiments/diagnose_gradients.py`
+  - CLI args: `--problem`, `--ckpt_path`, `--algorithm`, `--num_instances`, `--batch_size`, `--num_replicates`, `--seed`, `--device`, `--save_path`
+- Lightweight smoke tests:
+  - `code/tests/test_diagnose_gradients_script.py`
+
+#### 5.6.4 Done when
+
+- We can run diagnostics for all algorithms and save results deterministically for a fixed seed.
+- Reported diagnostics are stable enough to support Phase 4 ablations (LOO vs none vs heuristics).
 
 ---
 
@@ -351,7 +385,8 @@ Because RL4CO’s CLI `rl4co/tasks/eval.py` only loads models defined in `rl4co.
 
 ### Week 6 (baselines + harness)
 
-5. T3.5 build evaluation + diagnostics scripts and produce first comparable numbers on TSP50.
+5. T3.5 build evaluation script and produce first comparable numbers on TSP50.
+6. T3.6 build diagnostics script and produce first variance/ESS summaries on TSP50.
 
 ---
 
@@ -364,4 +399,4 @@ Phase 3 is “done” when:
 3. The pipeline is reproducible (seeded) and logs the key metrics needed for Phase 4:
    - reward curves
    - Max@K evaluation performance
-   - (optional) gradient variance proxies
+   - gradient variance / ESS diagnostics
