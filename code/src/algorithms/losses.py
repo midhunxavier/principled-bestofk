@@ -1,0 +1,231 @@
+"""Objective / loss functions for RL4CO-style policy gradients.
+
+RL4CO algorithms typically implement a `calculate_loss(...)` method on a Lightning
+module (e.g., REINFORCE, POMO). To keep objectives reusable across different
+architectures (AM, POMO, etc.), this module factors the *objective math* into
+standalone loss helpers that operate on tensors like:
+
+  - `rewards`:        [batch, n]
+  - `log_likelihood`: [batch, n]
+
+These losses are designed for stop-gradient semantics through any reward-based
+weights (e.g., Max@K score weights).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Literal
+
+import torch
+
+from src.estimators.baselines import apply_sample_loo, subloo_weights
+from src.estimators.maxk_gradient import maxk_gradient_weights
+from src.estimators.maxk_reward import maxk_reward_estimate
+
+VarianceReduction = Literal["none", "sample_loo", "subloo"]
+ScaleFn = Callable[[torch.Tensor], torch.Tensor]
+
+
+@dataclass(frozen=True)
+class MaxKLossOutput:
+    """Outputs for Max@K policy-gradient loss computation."""
+
+    loss: torch.Tensor
+    weights: torch.Tensor
+    rho_hat: torch.Tensor
+
+
+class MaxKLoss:
+    """Compute Max@K policy-gradient loss from rewards and log-likelihoods.
+
+    This implements the surrogate loss used by `MaxKPOMO`:
+
+        L(θ) = - E[ sum_i w_i(R_1:n) * log π_θ(τ_i) ],
+
+    with stop-gradient semantics through the weights `w_i`.
+
+    Args:
+        k: The K in Max@K (must satisfy 1 <= k <= n at call time).
+        variance_reduction: Variance reduction method:
+            - "none": no variance reduction
+            - "sample_loo": subtract Sample-LOO baseline (requires n > k)
+            - "subloo": use SubLOO hitchhiking-free weights (requires k >= 2)
+        stable_sort: If True, use stable sorting for deterministic tie-breaking.
+        check_numerics: If True, raise on NaN/inf in inputs or computed weights.
+        debug_clamp_weights: Optional clamp of weights after scaling (biases the
+            estimator; debug-only).
+    """
+
+    def __init__(
+        self,
+        *,
+        k: int,
+        variance_reduction: VarianceReduction = "none",
+        stable_sort: bool = True,
+        check_numerics: bool = False,
+        debug_clamp_weights: float | None = None,
+    ) -> None:
+        if k < 1:
+            raise ValueError(f"k must be >= 1, got k={k}")
+        if variance_reduction not in ("none", "sample_loo", "subloo"):
+            raise ValueError(
+                "variance_reduction must be one of "
+                f"('none', 'sample_loo', 'subloo'), got {variance_reduction!r}"
+            )
+        if debug_clamp_weights is not None and debug_clamp_weights <= 0:
+            raise ValueError(
+                "debug_clamp_weights must be > 0 when provided, got "
+                f"debug_clamp_weights={debug_clamp_weights}"
+            )
+
+        self.k = int(k)
+        self.variance_reduction: VarianceReduction = variance_reduction
+        self.stable_sort = bool(stable_sort)
+        self.check_numerics = bool(check_numerics)
+        self.debug_clamp_weights = debug_clamp_weights
+
+    def compute_weights(
+        self, rewards: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute Max@K gradient score-weights (and rho_hat) from rewards.
+
+        Args:
+            rewards: Reward tensor of shape `[batch, n]`.
+
+        Returns:
+            Tuple `(weights, rho_hat)` where both are `[batch, n]` / `[batch]`
+            aligned to the original sample order.
+
+        Raises:
+            ValueError: If shapes are invalid or k/variance reduction constraints fail.
+        """
+        if rewards.ndim != 2:
+            raise ValueError(
+                "rewards must have shape [batch, n], "
+                f"got rewards.shape={tuple(rewards.shape)}"
+            )
+
+        n = rewards.shape[-1]
+        k = self.k
+        if k < 1 or k > n:
+            raise ValueError(f"k must satisfy 1 <= k <= n, got k={k}, n={n}")
+
+        if self.check_numerics and not torch.isfinite(rewards).all().item():
+            num_bad = (~torch.isfinite(rewards)).sum().item()
+            raise ValueError(f"Non-finite rewards detected (count={num_bad}).")
+
+        with torch.no_grad():
+            if self.variance_reduction == "subloo":
+                weights = subloo_weights(rewards, k, stable_sort=self.stable_sort)
+            else:
+                s = maxk_gradient_weights(rewards, k, stable_sort=self.stable_sort)
+                if self.variance_reduction == "sample_loo":
+                    if n <= k:
+                        raise ValueError(
+                            "Sample-LOO requires n > k, "
+                            f"got n={n}, k={k} (set variance_reduction='none' or use SubLOO)"
+                        )
+                    weights = apply_sample_loo(
+                        s, rewards, k, stable_sort=self.stable_sort
+                    )
+                else:
+                    weights = s
+
+            rho_hat = maxk_reward_estimate(rewards, k, stable_sort=self.stable_sort)
+
+        if self.check_numerics:
+            if not torch.isfinite(weights).all().item():
+                num_bad = (~torch.isfinite(weights)).sum().item()
+                raise ValueError(
+                    f"Non-finite Max@K weights detected (count={num_bad})."
+                )
+            if not torch.isfinite(rho_hat).all().item():
+                num_bad = (~torch.isfinite(rho_hat)).sum().item()
+                raise ValueError(f"Non-finite rho_hat detected (count={num_bad}).")
+
+        return weights, rho_hat
+
+    def __call__(
+        self,
+        rewards: torch.Tensor,
+        log_likelihood: torch.Tensor,
+        *,
+        scale_fn: ScaleFn | None = None,
+    ) -> MaxKLossOutput:
+        """Compute Max@K surrogate loss for policy gradients.
+
+        Args:
+            rewards: Reward tensor of shape `[batch, n]`.
+            log_likelihood: Log-likelihood tensor of shape `[batch, n]`.
+            scale_fn: Optional scaling/normalization applied to weights *before*
+                the loss (e.g., RL4CO `RewardScaler`). This can be stateful.
+
+        Returns:
+            `MaxKLossOutput` containing `(loss, weights, rho_hat)`.
+
+        Raises:
+            ValueError: If shapes are invalid or numeric checks fail.
+        """
+        if rewards.ndim != 2:
+            raise ValueError(
+                "rewards must have shape [batch, n], "
+                f"got rewards.shape={tuple(rewards.shape)}"
+            )
+        if log_likelihood.ndim != 2:
+            raise ValueError(
+                "log_likelihood must have shape [batch, n], "
+                f"got log_likelihood.shape={tuple(log_likelihood.shape)}"
+            )
+        if rewards.shape != log_likelihood.shape:
+            raise ValueError(
+                "rewards and log_likelihood must have the same shape, "
+                f"got rewards.shape={tuple(rewards.shape)}, log_likelihood.shape={tuple(log_likelihood.shape)}"
+            )
+
+        if self.check_numerics and not torch.isfinite(log_likelihood).all().item():
+            num_bad = (~torch.isfinite(log_likelihood)).sum().item()
+            raise ValueError(f"Non-finite log_likelihood detected (count={num_bad}).")
+
+        weights, rho_hat = self.compute_weights(rewards)
+        if scale_fn is not None:
+            weights = scale_fn(weights)
+
+        if self.debug_clamp_weights is not None:
+            weights = weights.clamp(-self.debug_clamp_weights, self.debug_clamp_weights)
+
+        if self.check_numerics and not torch.isfinite(weights).all().item():
+            num_bad = (~torch.isfinite(weights)).sum().item()
+            raise ValueError(
+                f"Non-finite weights after scaling/clamping detected (count={num_bad})."
+            )
+
+        loss = -(weights.detach() * log_likelihood).sum(dim=-1).mean()
+        return MaxKLossOutput(loss=loss, weights=weights, rho_hat=rho_hat)
+
+
+def effective_sample_size(weights: torch.Tensor, *, eps: float = 1e-12) -> torch.Tensor:
+    """Compute a simple ESS-style concentration metric from per-sample weights.
+
+    This uses the common importance-weight ESS formula:
+
+        ESS = (sum_i w_i)^2 / sum_i w_i^2
+
+    Note: `w_i` here may be signed (policy-gradient weights). This metric is used
+    as a *diagnostic* for weight concentration/cancellation, not as a strict IS ESS.
+
+    Args:
+        weights: Tensor of shape `[batch, n]`.
+        eps: Small epsilon to avoid division by zero.
+
+    Returns:
+        Tensor of shape `[batch]` with ESS values in `[0, n]` (up to numerical error).
+    """
+    if weights.ndim != 2:
+        raise ValueError(
+            "weights must have shape [batch, n], "
+            f"got weights.shape={tuple(weights.shape)}"
+        )
+    sum_w = weights.sum(dim=-1)
+    sum_w2 = weights.square().sum(dim=-1)
+    return sum_w.square() / (sum_w2 + eps)

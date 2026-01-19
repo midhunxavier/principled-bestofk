@@ -16,7 +16,7 @@ Key references:
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 import torch
 import torch.nn as nn
@@ -25,11 +25,7 @@ from tensordict import TensorDict
 from rl4co.envs.common.base import RL4COEnvBase
 from rl4co.models.zoo.pomo import POMO
 
-from src.estimators.baselines import apply_sample_loo, subloo_weights
-from src.estimators.maxk_gradient import maxk_gradient_weights
-from src.estimators.maxk_reward import maxk_reward_estimate
-
-VarianceReduction = Literal["none", "sample_loo", "subloo"]
+from src.algorithms.losses import MaxKLoss, VarianceReduction
 
 
 class MaxKPOMO(POMO):
@@ -115,6 +111,14 @@ class MaxKPOMO(POMO):
         self.check_numerics = bool(check_numerics)
         self.debug_clamp_weights = debug_clamp_weights
 
+        self.maxk_loss = MaxKLoss(
+            k=self.k,
+            variance_reduction=self.variance_reduction,
+            stable_sort=self.stable_sort,
+            check_numerics=self.check_numerics,
+            debug_clamp_weights=self.debug_clamp_weights,
+        )
+
         self.save_hyperparameters(logger=False, ignore=["env", "policy"])
 
     def save_hyperparameters(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]
@@ -199,60 +203,21 @@ class MaxKPOMO(POMO):
                     f"Non-finite log_likelihood detected (count={num_bad})."
                 )
 
-        n = rewards.shape[-1]
-        k = self.k
-        if k < 1 or k > n:
-            raise ValueError(f"k must satisfy 1 <= k <= n, got k={k}, n={n}")
+        loss_out = self.maxk_loss(rewards, logp, scale_fn=self.advantage_scaler)
 
-        with torch.no_grad():
-            if self.variance_reduction == "subloo":
-                weights = subloo_weights(rewards, k, stable_sort=self.stable_sort)
-            else:
-                s = maxk_gradient_weights(rewards, k, stable_sort=self.stable_sort)
-                if self.variance_reduction == "sample_loo":
-                    if n <= k:
-                        raise ValueError(
-                            "Sample-LOO requires n > k, "
-                            f"got n={n}, k={k} (set variance_reduction='none' or use SubLOO)"
-                        )
-                    weights = apply_sample_loo(
-                        s, rewards, k, stable_sort=self.stable_sort
-                    )
-                else:
-                    weights = s
-
-            rho_hat = maxk_reward_estimate(rewards, k, stable_sort=self.stable_sort)
-
-        if self.check_numerics:
-            if not torch.isfinite(weights).all().item():
-                num_bad = (~torch.isfinite(weights)).sum().item()
-                raise ValueError(
-                    f"Non-finite Max@K weights detected (count={num_bad})."
-                )
-            if not torch.isfinite(rho_hat).all().item():
-                num_bad = (~torch.isfinite(rho_hat)).sum().item()
-                raise ValueError(f"Non-finite rho_hat detected (count={num_bad}).")
-
-        weights = self.advantage_scaler(weights)
-        if self.debug_clamp_weights is not None:
-            weights = weights.clamp(-self.debug_clamp_weights, self.debug_clamp_weights)
-
-        if self.check_numerics:
-            if not torch.isfinite(weights).all().item():
-                num_bad = (~torch.isfinite(weights)).sum().item()
-                raise ValueError(
-                    f"Non-finite weights after scaling/clamping detected (count={num_bad})."
-                )
-
-        loss = -(weights.detach() * logp).sum(dim=-1).mean()
-
-        policy_out.update({"loss": loss, "maxk_loss": loss, "rho_hat": rho_hat})
+        policy_out.update(
+            {
+                "loss": loss_out.loss,
+                "maxk_loss": loss_out.loss,
+                "rho_hat": loss_out.rho_hat,
+            }
+        )
         if self.check_numerics:
             policy_out.update(
                 {
-                    "weights_mean": weights.mean(),
-                    "weights_std": weights.std(unbiased=False),
-                    "weights_abs_max": weights.abs().max(),
+                    "weights_mean": loss_out.weights.mean(),
+                    "weights_std": loss_out.weights.std(unbiased=False),
+                    "weights_abs_max": loss_out.weights.abs().max(),
                 }
             )
         return policy_out

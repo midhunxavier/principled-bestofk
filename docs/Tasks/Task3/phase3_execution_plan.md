@@ -88,12 +88,14 @@ Before starting Phase 3, ensure:
 Phase 3 will likely add:
 
 - `code/src/algorithms/`
+  - `losses.py` (reusable objective implementations)
   - `maxk_pomo.py` (principled Max@K)
   - `leader_reward.py` (baseline)
 - `code/src/experiments/`
   - `train_tsp.py` (first target task)
   - `train_cvrp.py` (optional in Phase 3; required in Phase 4)
   - `evaluate.py` (evaluation harness)
+  - `diagnose_gradients.py` (gradient variance / ESS diagnostics)
 - `code/tests/`
   - Lightweight “loss math” tests (no long training) for integration sanity.
 
@@ -103,14 +105,15 @@ Phase 3 will likely add:
 
 ### 5.1 T3.1 — Create MaxK policy gradient class (RL4CO-compatible module)
 
-**Goal:** Implement an RL4CO-compatible Lightning module that trains a policy using the **unbiased Max@K gradient weights** from Phase 2.
+**Goal:** Implement an RL4CO-compatible module that trains a policy using the **unbiased Max@K gradient weights** from Phase 2, while keeping the **objective reusable** across architectures.
 
 #### 5.1.1 Design choice: where to plug in
 
-Recommended approach: subclass RL4CO’s POMO implementation and override the loss.
+Recommended approach: keep the *objective math* in a standalone loss helper, and subclass RL4CO’s POMO implementation to plug it into the training loop.
 
 - Base class: `rl4co.models.zoo.pomo.POMO`
 - Hook point: override `calculate_loss(...)` (called from `POMO.shared_step` during training)
+- Objective: `src.algorithms.losses.MaxKLoss` (reusable across modules that expose `reward` + `log_likelihood`)
 
 Why:
 - Reuses RL4CO’s multistart decoding, reward computation, logging conventions.
@@ -147,6 +150,8 @@ Compute:
 3. Loss:
    - `loss = -(weights.detach() * log_likelihood).sum(dim=-1).mean()`
 
+Note: the LOO baselines here are part of the *principled estimator* (variance reduction without bias), not just an ad-hoc “stability” tweak.
+
 Recommended extra logging (for debugging/Phase 4):
 
 - `rho_hat = maxk_reward_estimate(reward, k)` (per-instance Max@K reward estimate)
@@ -156,11 +161,14 @@ Recommended extra logging (for debugging/Phase 4):
 
 #### 5.1.4 Deliverables
 
+- `code/src/algorithms/losses.py` (`MaxKLoss`)
 - `code/src/algorithms/maxk_pomo.py`
 - `code/src/algorithms/__init__.py` exports
 - Minimal integration test(s) (fast):
   - Ensure shapes, constraints (`1 <= k <= n`, `n > k` for Sample-LOO, `k >= 2` for SubLOO)
   - Verify `.detach()` is used (no autograd path through sorting)
+- Gradient sanity check (toy problem; fast):
+  - Verify the surrogate produces an unbiased gradient on an enumeratable categorical toy Max@K objective.
 
 #### 5.1.5 Done when
 
@@ -305,6 +313,9 @@ Evaluation should:
   - best-of-K reward for sampling-based evaluation
   - runtime / throughput
 - Save structured results (e.g., `.pkl` or `.jsonl`) in a stable schema.
+- (Research/Phase 4 alignment) Provide gradient-quality diagnostics:
+  - weight concentration (ESS-style) for the per-sample loss weights/advantages
+  - gradient variance proxy across repeated resampling (same instances, different RNG)
 
 #### 5.5.2 Implementation approach
 
@@ -318,6 +329,8 @@ Because RL4CO’s CLI `rl4co/tasks/eval.py` only loads models defined in `rl4co.
 
 - `code/src/experiments/evaluate.py`
   - CLI args: `--problem`, `--ckpt_path`, `--algorithm`, `--method`, `--k_eval`, `--num_instances`, `--seed`, `--device`, `--save_path`
+- `code/src/experiments/diagnose_gradients.py`
+  - CLI args: `--problem`, `--ckpt_path`, `--algorithm`, `--num_instances`, `--batch_size`, `--num_replicates`, `--seed`, `--device`, `--save_path`
 - Documented example commands in the script docstring.
 
 #### 5.5.4 Done when
@@ -331,14 +344,14 @@ Because RL4CO’s CLI `rl4co/tasks/eval.py` only loads models defined in `rl4co.
 
 ### Week 5 (core integration)
 
-1. T3.1 implement `MaxKPOMO` and basic unit tests.
-2. T3.2 create `train_tsp.py` and smoke-run training.
-3. T3.3 add gradient clipping + NaN guards.
+1. T3.1 implement `MaxKLoss` + `MaxKPOMO` and basic unit + toy gradient tests.
+2. T3.4 implement Leader Reward baseline and parity tests (early comparison baseline).
+3. T3.2 create `train_tsp.py` and smoke-run training for all algorithms.
+4. T3.3 add gradient clipping + NaN guards.
 
 ### Week 6 (baselines + harness)
 
-4. T3.4 implement Leader Reward baseline and parity tests.
-5. T3.5 build evaluation script and produce first comparable numbers on TSP50.
+5. T3.5 build evaluation + diagnostics scripts and produce first comparable numbers on TSP50.
 
 ---
 

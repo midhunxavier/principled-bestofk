@@ -8,8 +8,10 @@
 
 ## 1. Deliverables
 
-- RL4CO-compatible algorithm module: `code/src/algorithms/maxk_pomo.py` (`MaxKPOMO`)
+- Reusable objective implementation: `code/src/algorithms/losses.py` (`MaxKLoss`)
+- RL4CO-compatible algorithm module: `code/src/algorithms/maxk_pomo.py` (`MaxKPOMO`, uses `MaxKLoss`)
 - Unit tests: `code/tests/test_maxk_pomo.py`
+- Gradient-level toy sanity test: `code/tests/test_toy_policy_gradient_unbiasedness.py`
 
 ---
 
@@ -27,7 +29,7 @@ We subclass RL4CO's `rl4co.models.zoo.pomo.POMO` and override `calculate_loss(..
 
 ### 2.2 Loss definition
 
-We implement the principled Max@K REINFORCE-style loss:
+We implement the principled Max@K REINFORCE-style loss, factored into a standalone loss helper (`MaxKLoss`) and used by `MaxKPOMO.calculate_loss(...)`:
 
 ```math
 \mathcal{L}(\theta) = -\mathbb{E}\left[\sum_{i=1}^{n} w_i(R_{1:n}) \log \pi_\theta(\tau_i)\right],
@@ -70,9 +72,13 @@ RL4CO's upstream constructors call `self.save_hyperparameters(...)` early. We ov
 - Shape contract: rewards must be unbatchified `[batch, n]`.
 - Optional smoke test (skipped if RL4CO envs are unavailable): instantiate a real RL4CO env and ensure the model constructs with reasonable `policy_kwargs`.
 
+`code/tests/test_toy_policy_gradient_unbiasedness.py` validates (tiny categorical toy problem):
+
+- The Max@K surrogate gradient produced by `MaxKLoss` matches the exact ∇Max@K objective computed by enumeration (within Monte Carlo tolerance).
+- Unbiasedness holds across variance reduction modes (`none`, `sample_loo`, `subloo`).
+
 ---
 
 ## 4. Known rough edges (environment)
 
 Some RL4CO imports transitively import Matplotlib, which may try to write font caches and emit warnings in restricted environments. If needed, set `MPLCONFIGDIR` to a writable path (e.g., `/tmp/mplconfig`) when running tests.
-

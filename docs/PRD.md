@@ -271,6 +271,7 @@ def maxk_policy_gradient(policy, instances, n_samples, k):
 | T3.3 | Implement stability mechanisms | Gradient clipping, normalization |
 | T3.4 | Implement Leader Reward baseline | Comparison baseline |
 | T3.5 | Create evaluation harness | Evaluation scripts |
+| T3.6 | Gradient diagnostics harness | Variance/ESS diagnostics scripts |
 
 ### 6.4 Phase 4: Experiments & Validation (Week 7-10)
 
@@ -349,21 +350,25 @@ principled-bestofk/
 │   │   │   └── baselines.py          # LOO baselines
 │   │   ├── algorithms/
 │   │   │   ├── __init__.py
-│   │   │   ├── maxk_reinforce.py     # MaxK REINFORCE
-│   │   │   └── leader_reward.py      # Baseline implementation
-│   │   ├── utils/
-│   │   │   ├── sorting.py
-│   │   │   └── combinatorics.py      # C(n,k) etc.
+│   │   │   ├── losses.py             # Reusable objective implementations (MaxKLoss, etc.)
+│   │   │   ├── maxk_pomo.py          # MaxK objective plugged into RL4CO POMO
+│   │   │   └── leader_reward.py      # Heuristic baseline implementation
 │   │   └── experiments/
 │   │       ├── train_tsp.py
-│   │       ├── train_cvrp.py
-│   │       └── evaluate.py
+│   │       ├── evaluate.py
+│   │       └── diagnose_gradients.py
 │   └── tests/
 │       ├── conftest.py
 │       ├── test_maxk_reward.py
 │       ├── test_maxk_gradient.py
 │       ├── test_baselines.py
 │       ├── test_pkpo_rspo_validation.py
+│       ├── test_maxk_pomo.py
+│       ├── test_leader_reward_pomo.py
+│       ├── test_train_tsp_script.py
+│       ├── test_evaluate_script.py
+│       ├── test_diagnose_gradients_script.py
+│       ├── test_toy_policy_gradient_unbiasedness.py
 │       └── test_stability.py
 ├── docs/
 │   ├── PRD.md                    # This document
@@ -377,7 +382,7 @@ principled-bestofk/
 ├── notebooks/
 │   ├── derivation_validation.ipynb
 │   └── experiment_analysis.ipynb
-└── configs/
+└── configs/                    # Optional (future): Hydra/experiment configs
     ├── tsp50.yaml
     ├── tsp100.yaml
     └── cvrp.yaml
