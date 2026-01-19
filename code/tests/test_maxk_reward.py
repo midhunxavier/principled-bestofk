@@ -51,7 +51,9 @@ class TestMaxKRewardWeights:
             for k in range(1, n + 1):
                 weights = maxk_reward_weights(n, k)
                 assert weights.shape == (n,)
-                assert torch.isclose(weights.sum(), torch.tensor(1.0, dtype=torch.float64))
+                assert torch.isclose(
+                    weights.sum(), torch.tensor(1.0, dtype=torch.float64)
+                )
 
     def test_k1_uniform_weights(self) -> None:
         """For k=1, weights should be uniform 1/n."""
@@ -74,7 +76,9 @@ class TestMaxKRewardWeights:
         for k in range(2, n + 1):
             weights = maxk_reward_weights(n, k)
             # First k-1 weights (0-indexed: 0 to k-2) should be zero
-            assert torch.allclose(weights[: k - 1], torch.zeros(k - 1, dtype=torch.float64))
+            assert torch.allclose(
+                weights[: k - 1], torch.zeros(k - 1, dtype=torch.float64)
+            )
 
     def test_invalid_k_raises(self) -> None:
         """Should raise ValueError for invalid k."""

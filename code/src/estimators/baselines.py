@@ -17,7 +17,7 @@ References:
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 
@@ -73,7 +73,7 @@ def _sample_loo_coefficients(
     tensor_key = (n, k, _device_to_key(device))
     coeff_tensors = _SAMPLE_LOO_COEFF_TENSOR_CACHE.get(tensor_key)
     if coeff_tensors is None:
-        kwargs = {"dtype": _INTERNAL_DTYPE}
+        kwargs: dict[str, Any] = {"dtype": _INTERNAL_DTYPE}
         if device is not None:
             kwargs["device"] = device
         coeff_keep = torch.tensor(coeff_values[0], **kwargs)
@@ -113,7 +113,7 @@ def _subloo_coefficients(
     tensor_key = (n, k, _device_to_key(device))
     coeff_rank = _SUBLOO_COEFF_TENSOR_CACHE.get(tensor_key)
     if coeff_rank is None:
-        kwargs = {"dtype": _INTERNAL_DTYPE}
+        kwargs: dict[str, Any] = {"dtype": _INTERNAL_DTYPE}
         if device is not None:
             kwargs["device"] = device
         coeff_rank = torch.tensor(coeff_values, **kwargs)

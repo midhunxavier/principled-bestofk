@@ -69,6 +69,8 @@ class MaxKPOMO(POMO):
         k: int,
         variance_reduction: VarianceReduction = "none",
         stable_sort: bool = True,
+        check_numerics: bool = False,
+        debug_clamp_weights: float | None = None,
         policy: nn.Module | None = None,
         policy_kwargs: dict[str, Any] | None = None,
         baseline: str = "shared",
@@ -85,6 +87,11 @@ class MaxKPOMO(POMO):
             raise ValueError(
                 "variance_reduction must be one of "
                 f"('none', 'sample_loo', 'subloo'), got {variance_reduction!r}"
+            )
+        if debug_clamp_weights is not None and debug_clamp_weights <= 0:
+            raise ValueError(
+                "debug_clamp_weights must be > 0 when provided, got "
+                f"debug_clamp_weights={debug_clamp_weights}"
             )
 
         policy_kwargs = {} if policy_kwargs is None else policy_kwargs
@@ -105,6 +112,8 @@ class MaxKPOMO(POMO):
         self.k = int(k)
         self.variance_reduction: VarianceReduction = variance_reduction
         self.stable_sort = bool(stable_sort)
+        self.check_numerics = bool(check_numerics)
+        self.debug_clamp_weights = debug_clamp_weights
 
         self.save_hyperparameters(logger=False, ignore=["env", "policy"])
 
@@ -126,7 +135,9 @@ class MaxKPOMO(POMO):
         kwargs["ignore"] = list(ignore_set)
 
         if kwargs.get("frame") is None:
-            kwargs["frame"] = inspect.currentframe().f_back  # type: ignore[assignment]
+            frame = inspect.currentframe()
+            if frame is not None and frame.f_back is not None:
+                kwargs["frame"] = frame.f_back
 
         super().save_hyperparameters(*args, **kwargs)
 
@@ -157,7 +168,11 @@ class MaxKPOMO(POMO):
             ValueError: If shapes are invalid or constraints for k / variance reduction fail.
         """
         rewards = reward if reward is not None else policy_out["reward"]
-        logp = log_likelihood if log_likelihood is not None else policy_out["log_likelihood"]
+        logp = (
+            log_likelihood
+            if log_likelihood is not None
+            else policy_out["log_likelihood"]
+        )
 
         if rewards.ndim != 2:
             raise ValueError(
@@ -174,6 +189,15 @@ class MaxKPOMO(POMO):
                 "rewards and log_likelihood must have the same shape, "
                 f"got rewards.shape={tuple(rewards.shape)}, log_likelihood.shape={tuple(logp.shape)}"
             )
+        if self.check_numerics:
+            if not torch.isfinite(rewards).all().item():
+                num_bad = (~torch.isfinite(rewards)).sum().item()
+                raise ValueError(f"Non-finite rewards detected (count={num_bad}).")
+            if not torch.isfinite(logp).all().item():
+                num_bad = (~torch.isfinite(logp)).sum().item()
+                raise ValueError(
+                    f"Non-finite log_likelihood detected (count={num_bad})."
+                )
 
         n = rewards.shape[-1]
         k = self.k
@@ -199,13 +223,36 @@ class MaxKPOMO(POMO):
 
             rho_hat = maxk_reward_estimate(rewards, k, stable_sort=self.stable_sort)
 
+        if self.check_numerics:
+            if not torch.isfinite(weights).all().item():
+                num_bad = (~torch.isfinite(weights)).sum().item()
+                raise ValueError(
+                    f"Non-finite Max@K weights detected (count={num_bad})."
+                )
+            if not torch.isfinite(rho_hat).all().item():
+                num_bad = (~torch.isfinite(rho_hat)).sum().item()
+                raise ValueError(f"Non-finite rho_hat detected (count={num_bad}).")
+
+        weights = self.advantage_scaler(weights)
+        if self.debug_clamp_weights is not None:
+            weights = weights.clamp(-self.debug_clamp_weights, self.debug_clamp_weights)
+
+        if self.check_numerics:
+            if not torch.isfinite(weights).all().item():
+                num_bad = (~torch.isfinite(weights)).sum().item()
+                raise ValueError(
+                    f"Non-finite weights after scaling/clamping detected (count={num_bad})."
+                )
+
         loss = -(weights.detach() * logp).sum(dim=-1).mean()
 
-        policy_out.update(
-            {
-                "loss": loss,
-                "maxk_loss": loss,
-                "rho_hat": rho_hat,
-            }
-        )
+        policy_out.update({"loss": loss, "maxk_loss": loss, "rho_hat": rho_hat})
+        if self.check_numerics:
+            policy_out.update(
+                {
+                    "weights_mean": weights.mean(),
+                    "weights_std": weights.std(unbiased=False),
+                    "weights_abs_max": weights.abs().max(),
+                }
+            )
         return policy_out

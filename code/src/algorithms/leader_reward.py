@@ -57,6 +57,8 @@ class LeaderRewardPOMO(POMO):
         *,
         alpha: float = 1.0,
         bonus: LeaderBonus = "max_minus_mean",
+        check_numerics: bool = False,
+        debug_clamp_weights: float | None = None,
         policy: nn.Module | None = None,
         policy_kwargs: dict[str, Any] | None = None,
         baseline: str = "shared",
@@ -70,8 +72,11 @@ class LeaderRewardPOMO(POMO):
         if alpha < 0:
             raise ValueError(f"alpha must be >= 0, got alpha={alpha}")
         if bonus not in ("max_minus_mean",):
+            raise ValueError(f"bonus must be one of ('max_minus_mean',), got {bonus!r}")
+        if debug_clamp_weights is not None and debug_clamp_weights <= 0:
             raise ValueError(
-                "bonus must be one of ('max_minus_mean',), got " f"{bonus!r}"
+                "debug_clamp_weights must be > 0 when provided, got "
+                f"debug_clamp_weights={debug_clamp_weights}"
             )
 
         policy_kwargs = {} if policy_kwargs is None else policy_kwargs
@@ -91,6 +96,8 @@ class LeaderRewardPOMO(POMO):
 
         self.alpha = float(alpha)
         self.bonus: LeaderBonus = bonus
+        self.check_numerics = bool(check_numerics)
+        self.debug_clamp_weights = debug_clamp_weights
 
         self.save_hyperparameters(logger=False, ignore=["env", "policy"])
 
@@ -112,7 +119,9 @@ class LeaderRewardPOMO(POMO):
         kwargs["ignore"] = list(ignore_set)
 
         if kwargs.get("frame") is None:
-            kwargs["frame"] = inspect.currentframe().f_back  # type: ignore[assignment]
+            frame = inspect.currentframe()
+            if frame is not None and frame.f_back is not None:
+                kwargs["frame"] = frame.f_back
 
         super().save_hyperparameters(*args, **kwargs)
 
@@ -142,7 +151,11 @@ class LeaderRewardPOMO(POMO):
             ValueError: If shapes are invalid.
         """
         rewards = reward if reward is not None else policy_out["reward"]
-        logp = log_likelihood if log_likelihood is not None else policy_out["log_likelihood"]
+        logp = (
+            log_likelihood
+            if log_likelihood is not None
+            else policy_out["log_likelihood"]
+        )
 
         if rewards.ndim != 2:
             raise ValueError(
@@ -159,6 +172,15 @@ class LeaderRewardPOMO(POMO):
                 "rewards and log_likelihood must have the same shape, "
                 f"got rewards.shape={tuple(rewards.shape)}, log_likelihood.shape={tuple(logp.shape)}"
             )
+        if self.check_numerics:
+            if not torch.isfinite(rewards).all().item():
+                num_bad = (~torch.isfinite(rewards)).sum().item()
+                raise ValueError(f"Non-finite rewards detected (count={num_bad}).")
+            if not torch.isfinite(logp).all().item():
+                num_bad = (~torch.isfinite(logp)).sum().item()
+                raise ValueError(
+                    f"Non-finite log_likelihood detected (count={num_bad})."
+                )
 
         # Base shared-baseline advantage: R_i - mean(R)
         with torch.no_grad():
@@ -178,7 +200,23 @@ class LeaderRewardPOMO(POMO):
 
                 advantage = advantage + (self.alpha * leader_mask * beta)
 
+        if self.check_numerics:
+            if not torch.isfinite(advantage).all().item():
+                num_bad = (~torch.isfinite(advantage)).sum().item()
+                raise ValueError(f"Non-finite advantage detected (count={num_bad}).")
+
         advantage = self.advantage_scaler(advantage)
+        if self.debug_clamp_weights is not None:
+            advantage = advantage.clamp(
+                -self.debug_clamp_weights, self.debug_clamp_weights
+            )
+        if self.check_numerics:
+            if not torch.isfinite(advantage).all().item():
+                num_bad = (~torch.isfinite(advantage)).sum().item()
+                raise ValueError(
+                    f"Non-finite advantage after scaling/clamping detected (count={num_bad})."
+                )
+
         reinforce_loss = -(advantage.detach() * logp).mean()
         loss = reinforce_loss + bl_loss
 
@@ -190,5 +228,12 @@ class LeaderRewardPOMO(POMO):
                 "bl_val": bl_val,
             }
         )
+        if self.check_numerics:
+            policy_out.update(
+                {
+                    "advantage_mean": advantage.mean(),
+                    "advantage_std": advantage.std(unbiased=False),
+                    "advantage_abs_max": advantage.abs().max(),
+                }
+            )
         return policy_out
-

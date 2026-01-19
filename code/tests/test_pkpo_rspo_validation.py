@@ -91,9 +91,9 @@ def rspo_maxk_gradient_weights_reference(rewards: torch.Tensor, k: int) -> torch
         support_term = 0.0
         for j_idx in range(i_idx + 1, n):
             rank_j = j_idx + 1
-            support_term = support_term + math.comb(rank_j - 2, k - 2) * sorted_rewards[
-                ..., j_idx
-            ]
+            support_term = (
+                support_term + math.comb(rank_j - 2, k - 2) * sorted_rewards[..., j_idx]
+            )
 
         s_sorted[..., i_idx] = (win_term + support_term) / norm
 
@@ -129,21 +129,22 @@ def pkpo_sample_loo_baseline_reference(rewards: torch.Tensor, k: int) -> torch.T
         if rank_i < k:
             total = 0.0
             for rank_j in range(k, n + 1):
-                total = total + math.comb(rank_j - 2, k - 1) * sorted_rewards[
-                    ..., rank_j - 1
-                ]
+                total = (
+                    total
+                    + math.comb(rank_j - 2, k - 1) * sorted_rewards[..., rank_j - 1]
+                )
             baseline_sorted[..., i_idx] = total / norm
             continue
 
         total = 0.0
         for rank_j in range(k, rank_i):
-            total = total + math.comb(rank_j - 1, k - 1) * sorted_rewards[
-                ..., rank_j - 1
-            ]
+            total = (
+                total + math.comb(rank_j - 1, k - 1) * sorted_rewards[..., rank_j - 1]
+            )
         for rank_j in range(rank_i + 1, n + 1):
-            total = total + math.comb(rank_j - 2, k - 1) * sorted_rewards[
-                ..., rank_j - 1
-            ]
+            total = (
+                total + math.comb(rank_j - 2, k - 1) * sorted_rewards[..., rank_j - 1]
+            )
 
         baseline_sorted[..., i_idx] = total / norm
 

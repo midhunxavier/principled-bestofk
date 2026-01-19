@@ -41,6 +41,7 @@ _REPO_ROOT = _CODE_DIR.parent
 
 Algorithm = Literal["pomo", "maxk_pomo", "leader_reward"]
 VarianceReduction = Literal["none", "sample_loo", "subloo"]
+RewardScale = int | Literal["scale", "norm"] | None
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,9 @@ class TrainConfig:
     variance_reduction: VarianceReduction
     stable_sort: bool
     alpha: float
+    reward_scale: RewardScale
+    check_numerics: bool
+    debug_clamp_weights: float | None
     policy_kwargs: dict[str, Any]
 
 
@@ -111,7 +115,30 @@ def _parse_limit(value: str) -> float | int:
         return float(value)
 
 
-def _default_run_name(algorithm: Algorithm, num_loc: int, num_starts: int | None, seed: int) -> str:
+def _parse_reward_scale(value: str) -> RewardScale:
+    lowered = value.strip().lower()
+    if lowered in ("none", "null", ""):
+        return None
+    if lowered == "scale":
+        return "scale"
+    if lowered == "norm":
+        return "norm"
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"reward_scale must be one of {{none, scale, norm}} or an int, got {value!r}"
+        ) from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(
+            f"reward_scale int must be > 0, got {parsed} from {value!r}"
+        )
+    return parsed
+
+
+def _default_run_name(
+    algorithm: Algorithm, num_loc: int, num_starts: int | None, seed: int
+) -> str:
     n_str = "auto" if num_starts is None else str(num_starts)
     return f"{algorithm}_tsp{num_loc}_n{n_str}_seed{seed}"
 
@@ -128,7 +155,9 @@ def parse_args(argv: list[str] | None = None) -> TrainConfig:
     )
     parser.add_argument("--seed", type=int, default=0, help="Global RNG seed.")
 
-    parser.add_argument("--num_loc", type=int, default=50, help="TSP size (number of nodes).")
+    parser.add_argument(
+        "--num_loc", type=int, default=50, help="TSP size (number of nodes)."
+    )
     parser.add_argument(
         "--num_starts",
         type=int,
@@ -166,8 +195,12 @@ def parse_args(argv: list[str] | None = None) -> TrainConfig:
         help="Generate RL4CO default datasets in data_dir if they don't exist.",
     )
 
-    parser.add_argument("--max_epochs", type=int, default=1, help="Number of training epochs.")
-    parser.add_argument("--batch_size", type=int, default=64, help="Training batch size.")
+    parser.add_argument(
+        "--max_epochs", type=int, default=1, help="Number of training epochs."
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=64, help="Training batch size."
+    )
     parser.add_argument(
         "--train_data_size",
         type=int,
@@ -236,7 +269,9 @@ def parse_args(argv: list[str] | None = None) -> TrainConfig:
         help="Optionally limit val batches (float fraction or int).",
     )
 
-    parser.add_argument("--k", type=int, default=8, help="Max@K parameter (for maxk_pomo).")
+    parser.add_argument(
+        "--k", type=int, default=8, help="Max@K parameter (for maxk_pomo)."
+    )
     parser.add_argument(
         "--variance_reduction",
         type=str,
@@ -257,8 +292,35 @@ def parse_args(argv: list[str] | None = None) -> TrainConfig:
         help="Leader Reward bonus scaling (for leader_reward).",
     )
 
-    parser.add_argument("--embed_dim", type=int, default=None, help="Policy embedding dimension.")
-    parser.add_argument("--num_heads", type=int, default=None, help="Policy attention heads.")
+    parser.add_argument(
+        "--reward_scale",
+        type=_parse_reward_scale,
+        default=None,
+        help=(
+            "Experimental scaling/normalization applied to advantages/weights. "
+            "Use 'norm', 'scale', or an integer divisor."
+        ),
+    )
+    parser.add_argument(
+        "--check_numerics",
+        action="store_true",
+        help="Enable NaN/inf guards in custom loss implementations.",
+    )
+    parser.add_argument(
+        "--debug_clamp_weights",
+        type=float,
+        default=None,
+        help=(
+            "Debug-only clamp of loss weights/advantages (biases the gradient; off by default)."
+        ),
+    )
+
+    parser.add_argument(
+        "--embed_dim", type=int, default=None, help="Policy embedding dimension."
+    )
+    parser.add_argument(
+        "--num_heads", type=int, default=None, help="Policy attention heads."
+    )
     parser.add_argument(
         "--num_encoder_layers",
         type=int,
@@ -304,6 +366,12 @@ def parse_args(argv: list[str] | None = None) -> TrainConfig:
     if algorithm == "leader_reward" and args.alpha < 0:
         raise ValueError(f"alpha must be >= 0, got alpha={args.alpha}")
 
+    if args.debug_clamp_weights is not None and args.debug_clamp_weights <= 0:
+        raise ValueError(
+            "debug_clamp_weights must be > 0 when provided, got "
+            f"debug_clamp_weights={args.debug_clamp_weights}"
+        )
+
     return TrainConfig(
         algorithm=algorithm,
         seed=args.seed,
@@ -332,6 +400,9 @@ def parse_args(argv: list[str] | None = None) -> TrainConfig:
         variance_reduction=variance_reduction,
         stable_sort=stable_sort,
         alpha=args.alpha,
+        reward_scale=args.reward_scale,
+        check_numerics=bool(args.check_numerics),
+        debug_clamp_weights=args.debug_clamp_weights,
         policy_kwargs=policy_kwargs,
     )
 
@@ -351,7 +422,7 @@ def make_model(cfg: TrainConfig, env):
 
     if cfg.algorithm == "pomo":
         model_cls = POMO
-        model_kwargs: dict[str, Any] = {}
+        model_kwargs: dict[str, Any] = {"reward_scale": cfg.reward_scale}
     elif cfg.algorithm == "maxk_pomo":
         from src.algorithms.maxk_pomo import MaxKPOMO
 
@@ -360,6 +431,9 @@ def make_model(cfg: TrainConfig, env):
             "k": cfg.k,
             "variance_reduction": cfg.variance_reduction,
             "stable_sort": cfg.stable_sort,
+            "reward_scale": cfg.reward_scale,
+            "check_numerics": cfg.check_numerics,
+            "debug_clamp_weights": cfg.debug_clamp_weights,
         }
     elif cfg.algorithm == "leader_reward":
         from src.algorithms.leader_reward import LeaderRewardPOMO
@@ -367,6 +441,9 @@ def make_model(cfg: TrainConfig, env):
         model_cls = LeaderRewardPOMO
         model_kwargs = {
             "alpha": cfg.alpha,
+            "reward_scale": cfg.reward_scale,
+            "check_numerics": cfg.check_numerics,
+            "debug_clamp_weights": cfg.debug_clamp_weights,
         }
     else:  # pragma: no cover
         raise RuntimeError(f"Unhandled algorithm: {cfg.algorithm}")
@@ -418,6 +495,7 @@ def make_trainer(cfg: TrainConfig, run_dir: Path):
         devices=cfg.devices,
         max_epochs=cfg.max_epochs,
         gradient_clip_val=cfg.gradient_clip_val,
+        gradient_clip_algorithm="norm",
         precision=cfg.precision,
         callbacks=callbacks,
         logger=logger,

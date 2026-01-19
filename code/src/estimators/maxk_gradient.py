@@ -17,13 +17,15 @@ References:
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 
 _INTERNAL_DTYPE = torch.float64
 
-_COEFF_VALUES_CACHE: dict[tuple[int, int], tuple[tuple[float, ...], tuple[float, ...]]] = {}
+_COEFF_VALUES_CACHE: dict[
+    tuple[int, int], tuple[tuple[float, ...], tuple[float, ...]]
+] = {}
 _COEFF_TENSOR_CACHE: dict[tuple[int, int, str], tuple[torch.Tensor, torch.Tensor]] = {}
 
 
@@ -67,7 +69,7 @@ def _gradient_coefficients(
     tensor_key = (n, k, _device_to_key(device))
     coeff_tensors = _COEFF_TENSOR_CACHE.get(tensor_key)
     if coeff_tensors is None:
-        kwargs = {"dtype": _INTERNAL_DTYPE}
+        kwargs: dict[str, Any] = {"dtype": _INTERNAL_DTYPE}
         if device is not None:
             kwargs["device"] = device
         win_coeff_tensor = torch.tensor(coeff_values[0], **kwargs)

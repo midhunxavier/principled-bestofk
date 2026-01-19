@@ -198,9 +198,7 @@ class TestSubLOO:
         assert weights.dtype == torch.float32
         assert weights.shape == rewards.shape
         assert torch.isfinite(weights).all()
-        assert torch.allclose(
-            weights, torch.zeros_like(weights), atol=1e-3, rtol=0.0
-        )
+        assert torch.allclose(weights, torch.zeros_like(weights), atol=1e-3, rtol=0.0)
 
 
 if __name__ == "__main__":

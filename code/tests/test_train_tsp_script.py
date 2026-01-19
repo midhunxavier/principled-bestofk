@@ -56,4 +56,3 @@ def test_can_build_env_and_model_smoke(tmp_path) -> None:
     model = train_tsp.make_model(cfg, env)
 
     assert hasattr(model, "calculate_loss")
-

@@ -19,30 +19,37 @@ class TestStability:
         """Should produce finite outputs for large n where float32 would overflow."""
         if k > n:
             pytest.skip(f"k={k} > n={n}")
-            
+
         torch.manual_seed(12345)
         # Use reasonably sized rewards that could cause overflow if multiplied by large coeffs
         # e.g., if coeff is 1e30 and reward is 1e2, product is 1e32 (fits in float32).
         # But if coeff is 1e37 and reward is 10, product is 1e38 (borderline/overflow).
         rewards = torch.randn(10, n, dtype=torch.float32) * 10.0
-        
+
         # 1. Reward Estimate
         est = maxk_reward_estimate(rewards, k)
-        assert torch.isfinite(est).all(), f"Reward estimate infinite/NaN for n={n}, k={k}"
-        
+        assert torch.isfinite(est).all(), (
+            f"Reward estimate infinite/NaN for n={n}, k={k}"
+        )
+
         # 2. Gradient Weights
         grad_weights = maxk_gradient_weights(rewards, k)
-        assert torch.isfinite(grad_weights).all(), f"Gradient weights infinite/NaN for n={n}, k={k}"
-        
+        assert torch.isfinite(grad_weights).all(), (
+            f"Gradient weights infinite/NaN for n={n}, k={k}"
+        )
+
         # 3. Sample LOO
         if k < n:
             loo = sample_loo_baseline(rewards, k)
-            assert torch.isfinite(loo).all(), f"Sample LOO infinite/NaN for n={n}, k={k}"
-            
+            assert torch.isfinite(loo).all(), (
+                f"Sample LOO infinite/NaN for n={n}, k={k}"
+            )
+
         # 4. SubLOO
         if k >= 2:
             sub = subloo_weights(rewards, k)
             assert torch.isfinite(sub).all(), f"SubLOO infinite/NaN for n={n}, k={k}"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

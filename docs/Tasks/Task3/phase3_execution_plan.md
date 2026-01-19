@@ -2,7 +2,7 @@
 
 **Phase:** 3 (RL4CO Integration)  
 **Scope:** T3.1–T3.5 from `docs/PRD.md`  
-**Status:** Planned  
+**Status:** In progress (T3.1–T3.4 implemented)  
 **Owner:** Research Team  
 **Last updated:** 2026-01-19  
 
@@ -352,4 +352,3 @@ Phase 3 is “done” when:
    - reward curves
    - Max@K evaluation performance
    - (optional) gradient variance proxies
-

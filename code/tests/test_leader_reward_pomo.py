@@ -59,7 +59,9 @@ class TestLeaderRewardPOMOLoss:
 
         out_pomo: dict = {}
         out_leader: dict = {}
-        out_pomo = pomo.calculate_loss(_td(batch_size), _td(batch_size), out_pomo, rewards, logp)
+        out_pomo = pomo.calculate_loss(
+            _td(batch_size), _td(batch_size), out_pomo, rewards, logp
+        )
         out_leader = leader.calculate_loss(
             _td(batch_size), _td(batch_size), out_leader, rewards, logp
         )
@@ -110,4 +112,22 @@ class TestLeaderRewardPOMOLoss:
         logp = torch.randn(batch_size, n)
 
         with pytest.raises(ValueError, match="expects unbatchified rewards"):
+            model.calculate_loss(_td(batch_size), _td(batch_size), {}, rewards, logp)
+
+    def test_check_numerics_raises_on_nonfinite_inputs(self) -> None:
+        batch_size, n = 2, 4
+        model = LeaderRewardPOMO(
+            _DummyEnv(),
+            policy=_DummyPolicy(),
+            num_augment=1,
+            num_starts=n,
+            alpha=0.0,
+            check_numerics=True,
+        )
+
+        rewards = torch.randn(batch_size, n)
+        rewards[0, 0] = float("nan")
+        logp = torch.randn(batch_size, n)
+
+        with pytest.raises(ValueError, match="Non-finite rewards"):
             model.calculate_loss(_td(batch_size), _td(batch_size), {}, rewards, logp)
