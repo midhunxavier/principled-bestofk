@@ -237,12 +237,26 @@ def load_model(cfg: EvalConfig, env):
         raise RuntimeError(f"Unhandled algorithm: {cfg.algorithm}")
 
     device = torch.device(cfg.device)
-    return ModelCls.load_from_checkpoint(
-        cfg.ckpt_path,
-        env=env,
-        map_location=device,
-        **load_kwargs,
-    )
+
+    # PyTorch 2.6+ security fix: allowlist TSPEnv for weights_only=True loading
+    # (in case weights_only=False is not propagated by RL4CO)
+    ctx = None
+    try:
+        from torch.serialization import safe_globals
+        from rl4co.envs.routing.tsp.env import TSPEnv
+        ctx = safe_globals([TSPEnv])
+    except (ImportError, AttributeError):
+        from contextlib import nullcontext
+        ctx = nullcontext()
+
+    with ctx:
+        return ModelCls.load_from_checkpoint(
+            cfg.ckpt_path,
+            env=env,
+            map_location=device,
+            weights_only=False,
+            **load_kwargs,
+        )
 
 
 def _as_float(value: Any) -> float:

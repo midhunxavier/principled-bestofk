@@ -1,0 +1,60 @@
+{
+  "eval_args": {
+    "batch_size": 0,
+    "device": "cpu",
+    "k_eval": 128,
+    "num_instances": 0,
+    "seed": 0
+  },
+  "runs": [
+    {
+      "algorithm": "pomo",
+      "leader_alpha": 0.5,
+      "maxk_k": 4,
+      "maxk_variance_reduction": "subloo",
+      "num_loc": 20,
+      "num_starts": 16,
+      "run_name": "tsp20_pomo_n16_seed0",
+      "seed": 0
+    },
+    {
+      "algorithm": "leader_reward",
+      "leader_alpha": 0.5,
+      "maxk_k": 4,
+      "maxk_variance_reduction": "subloo",
+      "num_loc": 20,
+      "num_starts": 16,
+      "run_name": "tsp20_leader_alpha0p5_n16_seed0",
+      "seed": 0
+    },
+    {
+      "algorithm": "maxk_pomo",
+      "leader_alpha": 0.5,
+      "maxk_k": 4,
+      "maxk_variance_reduction": "subloo",
+      "num_loc": 20,
+      "num_starts": 16,
+      "run_name": "tsp20_maxk_k4_subloo_n16_seed0",
+      "seed": 0
+    }
+  ],
+  "schema_version": 1,
+  "train_args": {
+    "accelerator": "cpu",
+    "batch_size": 64,
+    "check_numerics": false,
+    "devices": 1,
+    "enable_progress_bar": true,
+    "generate_default_data": true,
+    "gradient_clip_val": 1.0,
+    "limit_train_batches": null,
+    "limit_val_batches": null,
+    "log_every_n_steps": 50,
+    "lr": 0.0001,
+    "max_epochs": 1,
+    "precision": "32-true",
+    "test_data_size": 128,
+    "train_data_size": 1280,
+    "val_data_size": 128
+  }
+}
