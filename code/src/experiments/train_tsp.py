@@ -40,7 +40,8 @@ if str(_CODE_DIR) not in sys.path:
 _REPO_ROOT = _CODE_DIR.parent
 
 Algorithm = Literal["pomo", "maxk_pomo", "leader_reward"]
-VarianceReduction = Literal["none", "sample_loo", "subloo"]
+VarianceReduction = Literal["none", "sample_loo", "subloo", "hybrid"]
+WeightNormalization = Literal["none", "zscore", "sum_to_zero"]
 RewardScale = int | Literal["scale", "norm"] | None
 
 
@@ -71,6 +72,9 @@ class TrainConfig:
     limit_val_batches: float | int | None
     k: int
     variance_reduction: VarianceReduction
+    weight_normalization: WeightNormalization
+    min_gap_scale: float
+    hybrid_lambda: float
     stable_sort: bool
     alpha: float
     reward_scale: RewardScale
@@ -275,9 +279,28 @@ def parse_args(argv: list[str] | None = None) -> TrainConfig:
     parser.add_argument(
         "--variance_reduction",
         type=str,
-        choices=("none", "sample_loo", "subloo"),
+        choices=("none", "sample_loo", "subloo", "hybrid"),
         default="none",
         help="Variance reduction mode for maxk_pomo.",
+    )
+    parser.add_argument(
+        "--weight_normalization",
+        type=str,
+        choices=("none", "zscore", "sum_to_zero"),
+        default="zscore",
+        help="Weight normalization mode for maxk_pomo (default: zscore).",
+    )
+    parser.add_argument(
+        "--min_gap_scale",
+        type=float,
+        default=0.01,
+        help="Minimum gap scale for SubLOO to prevent zero gradients (default: 0.01).",
+    )
+    parser.add_argument(
+        "--hybrid_lambda",
+        type=float,
+        default=0.5,
+        help="Blending coefficient for hybrid mode: 1.0=SubLOO, 0.0=POMO (default: 0.5).",
     )
     parser.add_argument(
         "--unstable_sort",
@@ -398,6 +421,9 @@ def parse_args(argv: list[str] | None = None) -> TrainConfig:
         limit_val_batches=args.limit_val_batches,
         k=args.k,
         variance_reduction=variance_reduction,
+        weight_normalization=args.weight_normalization,
+        min_gap_scale=float(args.min_gap_scale),
+        hybrid_lambda=float(args.hybrid_lambda),
         stable_sort=stable_sort,
         alpha=args.alpha,
         reward_scale=args.reward_scale,
@@ -430,6 +456,9 @@ def make_model(cfg: TrainConfig, env):
         model_kwargs = {
             "k": cfg.k,
             "variance_reduction": cfg.variance_reduction,
+            "weight_normalization": cfg.weight_normalization,
+            "min_gap_scale": cfg.min_gap_scale,
+            "hybrid_lambda": cfg.hybrid_lambda,
             "stable_sort": cfg.stable_sort,
             "reward_scale": cfg.reward_scale,
             "check_numerics": cfg.check_numerics,

@@ -241,6 +241,7 @@ def subloo_weights(
     k: int,
     *,
     stable_sort: bool = True,
+    min_gap_scale: float = 0.0,
 ) -> torch.Tensor:
     """Compute SubLOO weights that eliminate hitchhiking.
 
@@ -251,6 +252,10 @@ def subloo_weights(
             cast back to the input dtype at the end.
         k: The K in Max@K objective (2 <= k <= n).
         stable_sort: If True, use stable sorting (deterministic tie-breaking).
+        min_gap_scale: Minimum gap as a fraction of the reward range. This prevents
+            zero gradients when rewards are clustered (e.g., early in training).
+            The minimum gap is computed as: min_gap = min_gap_scale * (R_max - R_min).
+            Set to 0.0 to disable (original behavior). Recommended: 0.01-0.05.
 
     Returns:
         Tensor of shape [n] or [batch, n] with SubLOO weights aligned to the
@@ -304,6 +309,19 @@ def subloo_weights(
     weighted_sum = prefix_weighted[..., ranks] - base_weighted
 
     sum_gaps = sorted_rewards * num_subsets - weighted_sum
+    
+    # Apply minimum gap floor to prevent zero gradients when rewards are clustered
+    # This ensures gradient signal even in early training when policy is random
+    if min_gap_scale > 0:
+        reward_range = sorted_rewards[..., -1:] - sorted_rewards[..., :1]  # [batch, 1]
+        min_gap = min_gap_scale * reward_range  # [batch, 1]
+        # Only apply to ranks >= k (those that get gradient)
+        is_top_k = (ranks >= k).float()  # [n]
+        # Ensure each contributing sample has at least min_gap contribution
+        # Scale by num_subsets to maintain proper relative weighting
+        min_contribution = min_gap * num_subsets * is_top_k
+        sum_gaps = torch.maximum(sum_gaps, min_contribution)
+    
     weights_sorted = sum_gaps * inv_norm
     weights_sorted = torch.where(
         ranks < k, torch.zeros_like(weights_sorted), weights_sorted

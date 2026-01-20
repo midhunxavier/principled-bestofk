@@ -44,6 +44,9 @@ def test_build_run_grid_and_names() -> None:
         num_starts=16,
         maxk_k=8,
         maxk_variance_reduction="subloo",
+        maxk_weight_normalization="zscore",
+        maxk_min_gap_scale=0.01,
+        maxk_hybrid_lambda=0.5,
         leader_alpha=0.5,
     )
     names = [r.run_name() for r in runs]
@@ -83,6 +86,9 @@ def test_summarize_writes_artifacts(tmp_path: Path) -> None:
         num_starts=16,
         maxk_k=8,
         maxk_variance_reduction="subloo",
+        maxk_weight_normalization="zscore",
+        maxk_min_gap_scale=0.01,
+        maxk_hybrid_lambda=0.5,
         leader_alpha=0.5,
     )
 

@@ -76,7 +76,13 @@ def test_maxk_loss_gradient_matches_exact_toy(variance_reduction: str) -> None:
     logp = probs.log()[actions]  # [num_trials, n]
     rewards = action_rewards[actions]  # [num_trials, n]
 
-    loss_fn = MaxKLoss(k=k, variance_reduction=variance_reduction, stable_sort=True)
+    loss_fn = MaxKLoss(
+        k=k,
+        variance_reduction=variance_reduction,
+        weight_normalization="none",  # Disable normalization for exact gradient match
+        min_gap_scale=0.0,  # Disable min gap for exact gradient match
+        stable_sort=True,
+    )
     out = loss_fn(rewards, logp)
 
     # The surrogate objective is -loss. Its gradient should match ∇J_maxK.

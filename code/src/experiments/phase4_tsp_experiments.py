@@ -38,7 +38,8 @@ import numpy as np
 
 Algorithm = Literal["pomo", "leader_reward", "maxk_pomo"]
 EvalMethod = Literal["greedy", "sampling"]
-VarianceReduction = Literal["none", "sample_loo", "subloo"]
+VarianceReduction = Literal["none", "sample_loo", "subloo", "hybrid"]
+WeightNormalization = Literal["none", "zscore", "sum_to_zero"]
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,9 @@ class RunSpec:
     num_starts: int
     maxk_k: int
     maxk_variance_reduction: VarianceReduction
+    maxk_weight_normalization: WeightNormalization
+    maxk_min_gap_scale: float
+    maxk_hybrid_lambda: float
     leader_alpha: float
 
     def run_name(self) -> str:
@@ -157,6 +161,9 @@ def build_run_grid(
     num_starts: int,
     maxk_k: int,
     maxk_variance_reduction: VarianceReduction,
+    maxk_weight_normalization: WeightNormalization,
+    maxk_min_gap_scale: float,
+    maxk_hybrid_lambda: float,
     leader_alpha: float,
 ) -> list[RunSpec]:
     """Build the Phase 4 TSP run grid.
@@ -168,6 +175,9 @@ def build_run_grid(
         num_starts: Number of POMO multi-start rollouts per instance (n).
         maxk_k: Max@K parameter for `maxk_pomo`.
         maxk_variance_reduction: Variance reduction mode for `maxk_pomo`.
+        maxk_weight_normalization: Weight normalization mode for `maxk_pomo`.
+        maxk_min_gap_scale: Minimum gap scale for SubLOO (prevents zero gradients).
+        maxk_hybrid_lambda: Blending coefficient for hybrid mode.
         leader_alpha: Leader Reward alpha for `leader_reward`.
 
     Returns:
@@ -188,6 +198,9 @@ def build_run_grid(
                         num_starts=num_starts,
                         maxk_k=maxk_k,
                         maxk_variance_reduction=maxk_variance_reduction,
+                        maxk_weight_normalization=maxk_weight_normalization,
+                        maxk_min_gap_scale=maxk_min_gap_scale,
+                        maxk_hybrid_lambda=maxk_hybrid_lambda,
                         leader_alpha=leader_alpha,
                     )
                 )
@@ -382,6 +395,9 @@ def _train_one(
     if run.algorithm == "maxk_pomo":
         cmd.extend(["--k", str(run.maxk_k)])
         cmd.extend(["--variance_reduction", run.maxk_variance_reduction])
+        cmd.extend(["--weight_normalization", run.maxk_weight_normalization])
+        cmd.extend(["--min_gap_scale", str(run.maxk_min_gap_scale)])
+        cmd.extend(["--hybrid_lambda", str(run.maxk_hybrid_lambda)])
     elif run.algorithm == "leader_reward":
         cmd.extend(["--alpha", str(run.leader_alpha)])
 
@@ -722,8 +738,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.add_argument(
             "--num_starts",
             type=int,
-            default=16,
-            help="Number of multi-start rollouts per instance (n).",
+            default=32,
+            help="Number of multi-start rollouts per instance (n). Default: 32 for 4:1 n/k ratio.",
         )
         p.add_argument(
             "--leader_alpha",
@@ -740,14 +756,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.add_argument(
             "--maxk_variance_reduction",
             type=str,
-            choices=("none", "sample_loo", "subloo"),
+            choices=("none", "sample_loo", "subloo", "hybrid"),
             default="subloo",
             help="Variance reduction mode for maxk_pomo.",
+        )
+        p.add_argument(
+            "--maxk_weight_normalization",
+            type=str,
+            choices=("none", "zscore", "sum_to_zero"),
+            default="zscore",
+            help="Weight normalization mode for maxk_pomo (default: zscore).",
+        )
+        p.add_argument(
+            "--maxk_min_gap_scale",
+            type=float,
+            default=0.01,
+            help="Minimum gap scale for SubLOO to prevent zero gradients (default: 0.01).",
+        )
+        p.add_argument(
+            "--maxk_hybrid_lambda",
+            type=float,
+            default=0.5,
+            help="Blending coefficient for hybrid mode: 1.0=SubLOO, 0.0=POMO (default: 0.5).",
         )
 
     train_p = subparsers.add_parser("train", help="Run training for the T4.1 grid.")
     add_grid_args(train_p)
-    train_p.add_argument("--max_epochs", type=int, default=10)
+    train_p.add_argument("--max_epochs", type=int, default=100)
     train_p.add_argument("--batch_size", type=int, default=128)
     train_p.add_argument("--train_data_size", type=int, default=20_000)
     train_p.add_argument("--val_data_size", type=int, default=2_000)
@@ -847,7 +882,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     all_p = subparsers.add_parser("all", help="Run train + eval + summarize.")
     add_grid_args(all_p)
-    all_p.add_argument("--max_epochs", type=int, default=10)
+    all_p.add_argument("--max_epochs", type=int, default=100)
     all_p.add_argument("--batch_size", type=int, default=128)
     all_p.add_argument("--train_data_size", type=int, default=20_000)
     all_p.add_argument("--val_data_size", type=int, default=2_000)
@@ -885,6 +920,7 @@ def main(argv: list[str] | None = None) -> None:
     seeds: list[int] = _parse_int_list([str(x) for x in args.seeds])
 
     maxk_vr: VarianceReduction = args.maxk_variance_reduction
+    maxk_wn: WeightNormalization = args.maxk_weight_normalization
     runs = build_run_grid(
         num_locs=num_locs,
         seeds=seeds,
@@ -892,6 +928,9 @@ def main(argv: list[str] | None = None) -> None:
         num_starts=int(args.num_starts),
         maxk_k=int(args.maxk_k),
         maxk_variance_reduction=maxk_vr,
+        maxk_weight_normalization=maxk_wn,
+        maxk_min_gap_scale=float(args.maxk_min_gap_scale),
+        maxk_hybrid_lambda=float(args.maxk_hybrid_lambda),
         leader_alpha=float(args.leader_alpha),
     )
 

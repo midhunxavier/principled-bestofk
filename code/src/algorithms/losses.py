@@ -23,8 +23,44 @@ from src.estimators.baselines import apply_sample_loo, subloo_weights
 from src.estimators.maxk_gradient import maxk_gradient_weights
 from src.estimators.maxk_reward import maxk_reward_estimate
 
-VarianceReduction = Literal["none", "sample_loo", "subloo"]
+VarianceReduction = Literal["none", "sample_loo", "subloo", "hybrid"]
+WeightNormalization = Literal["none", "zscore", "sum_to_zero"]
 ScaleFn = Callable[[torch.Tensor], torch.Tensor]
+
+
+def normalize_weights(
+    weights: torch.Tensor,
+    mode: WeightNormalization = "zscore",
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """Normalize gradient weights to stabilize training.
+
+    SubLOO and MaxK weights can have very different magnitudes compared to
+    standard POMO advantages. This normalization ensures the effective learning
+    rate is comparable.
+
+    Args:
+        weights: Tensor of shape [batch, n] with gradient weights.
+        mode: Normalization mode:
+            - "none": No normalization (return as-is).
+            - "zscore": Zero-mean, unit-std normalization per batch.
+            - "sum_to_zero": Subtract mean to ensure sum is zero (preserves scale).
+        eps: Small constant for numerical stability in division.
+
+    Returns:
+        Normalized weights tensor of same shape.
+    """
+    if mode == "none":
+        return weights
+    elif mode == "zscore":
+        w_mean = weights.mean(dim=-1, keepdim=True)
+        w_std = weights.std(dim=-1, keepdim=True)
+        return (weights - w_mean) / (w_std + eps)
+    elif mode == "sum_to_zero":
+        w_mean = weights.mean(dim=-1, keepdim=True)
+        return weights - w_mean
+    else:
+        raise ValueError(f"Unknown normalization mode: {mode!r}")
 
 
 @dataclass(frozen=True)
@@ -51,10 +87,19 @@ class MaxKLoss:
             - "none": no variance reduction
             - "sample_loo": subtract Sample-LOO baseline (requires n > k)
             - "subloo": use SubLOO hitchhiking-free weights (requires k >= 2)
+            - "hybrid": blend SubLOO with POMO-style mean-centered advantage
+        weight_normalization: How to normalize weights before computing loss:
+            - "none": no normalization (original behavior)
+            - "zscore": zero-mean, unit-std normalization (RECOMMENDED for SubLOO)
+            - "sum_to_zero": subtract mean only (preserves scale)
         stable_sort: If True, use stable sorting for deterministic tie-breaking.
         check_numerics: If True, raise on NaN/inf in inputs or computed weights.
         debug_clamp_weights: Optional clamp of weights after scaling (biases the
             estimator; debug-only).
+        min_gap_scale: Minimum gap as fraction of reward range for SubLOO. Prevents
+            zero gradients when rewards are clustered. Set to 0 to disable.
+        hybrid_lambda: Blending coefficient for hybrid mode. 1.0 = pure SubLOO,
+            0.0 = pure POMO advantage. Recommended: 0.5-0.8.
     """
 
     def __init__(
@@ -62,28 +107,47 @@ class MaxKLoss:
         *,
         k: int,
         variance_reduction: VarianceReduction = "none",
+        weight_normalization: WeightNormalization = "zscore",
         stable_sort: bool = True,
         check_numerics: bool = False,
         debug_clamp_weights: float | None = None,
+        min_gap_scale: float = 0.01,
+        hybrid_lambda: float = 0.5,
     ) -> None:
         if k < 1:
             raise ValueError(f"k must be >= 1, got k={k}")
-        if variance_reduction not in ("none", "sample_loo", "subloo"):
+        if variance_reduction not in ("none", "sample_loo", "subloo", "hybrid"):
             raise ValueError(
                 "variance_reduction must be one of "
-                f"('none', 'sample_loo', 'subloo'), got {variance_reduction!r}"
+                f"('none', 'sample_loo', 'subloo', 'hybrid'), got {variance_reduction!r}"
+            )
+        if weight_normalization not in ("none", "zscore", "sum_to_zero"):
+            raise ValueError(
+                "weight_normalization must be one of "
+                f"('none', 'zscore', 'sum_to_zero'), got {weight_normalization!r}"
             )
         if debug_clamp_weights is not None and debug_clamp_weights <= 0:
             raise ValueError(
                 "debug_clamp_weights must be > 0 when provided, got "
                 f"debug_clamp_weights={debug_clamp_weights}"
             )
+        if min_gap_scale < 0:
+            raise ValueError(
+                f"min_gap_scale must be >= 0, got min_gap_scale={min_gap_scale}"
+            )
+        if not (0.0 <= hybrid_lambda <= 1.0):
+            raise ValueError(
+                f"hybrid_lambda must be in [0, 1], got hybrid_lambda={hybrid_lambda}"
+            )
 
         self.k = int(k)
         self.variance_reduction: VarianceReduction = variance_reduction
+        self.weight_normalization: WeightNormalization = weight_normalization
         self.stable_sort = bool(stable_sort)
         self.check_numerics = bool(check_numerics)
         self.debug_clamp_weights = debug_clamp_weights
+        self.min_gap_scale = float(min_gap_scale)
+        self.hybrid_lambda = float(hybrid_lambda)
 
     def compute_weights(
         self, rewards: torch.Tensor
@@ -117,7 +181,31 @@ class MaxKLoss:
 
         with torch.no_grad():
             if self.variance_reduction == "subloo":
-                weights = subloo_weights(rewards, k, stable_sort=self.stable_sort)
+                weights = subloo_weights(
+                    rewards, k,
+                    stable_sort=self.stable_sort,
+                    min_gap_scale=self.min_gap_scale,
+                )
+            elif self.variance_reduction == "hybrid":
+                # Hybrid mode: blend SubLOO weights with POMO-style mean-centered advantage
+                # This provides gradient signal even when SubLOO gaps are small
+                if k < 2:
+                    raise ValueError(
+                        "Hybrid variance reduction requires k >= 2, "
+                        f"got k={k} (use variance_reduction='none' for k=1)"
+                    )
+                subloo_w = subloo_weights(
+                    rewards, k,
+                    stable_sort=self.stable_sort,
+                    min_gap_scale=self.min_gap_scale,
+                )
+                # POMO-style advantage: center rewards around mean
+                pomo_adv = rewards - rewards.mean(dim=-1, keepdim=True)
+                # Blend: lambda * SubLOO + (1 - lambda) * POMO
+                weights = (
+                    self.hybrid_lambda * subloo_w
+                    + (1.0 - self.hybrid_lambda) * pomo_adv
+                )
             else:
                 s = maxk_gradient_weights(rewards, k, stable_sort=self.stable_sort)
                 if self.variance_reduction == "sample_loo":
@@ -188,6 +276,11 @@ class MaxKLoss:
             raise ValueError(f"Non-finite log_likelihood detected (count={num_bad}).")
 
         weights, rho_hat = self.compute_weights(rewards)
+        
+        # Apply weight normalization to stabilize training
+        # This is critical for SubLOO which has different magnitude than POMO advantages
+        weights = normalize_weights(weights, mode=self.weight_normalization)
+        
         if scale_fn is not None:
             weights = scale_fn(weights)
 

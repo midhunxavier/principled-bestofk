@@ -25,7 +25,7 @@ from tensordict import TensorDict
 from rl4co.envs.common.base import RL4COEnvBase
 from rl4co.models.zoo.pomo import POMO
 
-from src.algorithms.losses import MaxKLoss, VarianceReduction
+from src.algorithms.losses import MaxKLoss, VarianceReduction, WeightNormalization
 
 
 class MaxKPOMO(POMO):
@@ -41,7 +41,19 @@ class MaxKPOMO(POMO):
             - "none": no variance reduction
             - "sample_loo": subtract Sample-LOO baseline (requires n > k)
             - "subloo": use SubLOO hitchhiking-free weights (requires k >= 2)
+            - "hybrid": blend SubLOO with POMO-style mean-centered advantage
+        weight_normalization: How to normalize weights before computing loss:
+            - "none": no normalization (original behavior)
+            - "zscore": zero-mean, unit-std normalization (RECOMMENDED for SubLOO)
+            - "sum_to_zero": subtract mean only (preserves scale)
+        min_gap_scale: Minimum gap as fraction of reward range for SubLOO. Prevents
+            zero gradients when rewards are clustered. Recommended: 0.01-0.05.
+        hybrid_lambda: Blending coefficient for hybrid mode. 1.0 = pure SubLOO,
+            0.0 = pure POMO advantage. Recommended: 0.5-0.8.
         stable_sort: If True, use stable sorting for deterministic tie-breaking.
+        check_numerics: If True, raise on NaN/inf in inputs or computed weights.
+        debug_clamp_weights: Optional clamp of weights after scaling (biases the
+            estimator; debug-only).
         policy: Optional policy module. If None, uses RL4CO's default policy for POMO.
         policy_kwargs: Keyword args for default RL4CO policy (ignored if policy is provided).
         baseline: Passed to RL4CO POMO constructor. POMO requires "shared", but the
@@ -64,6 +76,9 @@ class MaxKPOMO(POMO):
         *,
         k: int,
         variance_reduction: VarianceReduction = "none",
+        weight_normalization: WeightNormalization = "zscore",
+        min_gap_scale: float = 0.01,
+        hybrid_lambda: float = 0.5,
         stable_sort: bool = True,
         check_numerics: bool = False,
         debug_clamp_weights: float | None = None,
@@ -79,10 +94,10 @@ class MaxKPOMO(POMO):
     ) -> None:
         if k < 1:
             raise ValueError(f"k must be >= 1, got k={k}")
-        if variance_reduction not in ("none", "sample_loo", "subloo"):
+        if variance_reduction not in ("none", "sample_loo", "subloo", "hybrid"):
             raise ValueError(
                 "variance_reduction must be one of "
-                f"('none', 'sample_loo', 'subloo'), got {variance_reduction!r}"
+                f"('none', 'sample_loo', 'subloo', 'hybrid'), got {variance_reduction!r}"
             )
         if debug_clamp_weights is not None and debug_clamp_weights <= 0:
             raise ValueError(
@@ -107,6 +122,9 @@ class MaxKPOMO(POMO):
 
         self.k = int(k)
         self.variance_reduction: VarianceReduction = variance_reduction
+        self.weight_normalization: WeightNormalization = weight_normalization
+        self.min_gap_scale = float(min_gap_scale)
+        self.hybrid_lambda = float(hybrid_lambda)
         self.stable_sort = bool(stable_sort)
         self.check_numerics = bool(check_numerics)
         self.debug_clamp_weights = debug_clamp_weights
@@ -114,9 +132,12 @@ class MaxKPOMO(POMO):
         self.maxk_loss = MaxKLoss(
             k=self.k,
             variance_reduction=self.variance_reduction,
+            weight_normalization=self.weight_normalization,
             stable_sort=self.stable_sort,
             check_numerics=self.check_numerics,
             debug_clamp_weights=self.debug_clamp_weights,
+            min_gap_scale=self.min_gap_scale,
+            hybrid_lambda=self.hybrid_lambda,
         )
 
         self.save_hyperparameters(logger=False, ignore=["env", "policy"])

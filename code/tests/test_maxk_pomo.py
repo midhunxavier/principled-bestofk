@@ -44,6 +44,7 @@ class TestMaxKPOMOLoss:
             num_starts=n,
             k=k,
             variance_reduction="none",
+            weight_normalization="none",  # Disable normalization for exact match
             stable_sort=True,
         )
 
@@ -73,6 +74,7 @@ class TestMaxKPOMOLoss:
             num_starts=n,
             k=k,
             variance_reduction="sample_loo",
+            weight_normalization="none",  # Disable normalization for exact match
             stable_sort=True,
         )
 
@@ -101,13 +103,15 @@ class TestMaxKPOMOLoss:
             num_starts=n,
             k=k,
             variance_reduction="subloo",
+            weight_normalization="none",  # Disable normalization for exact match
+            min_gap_scale=0.0,  # Disable min gap for exact match with original subloo
             stable_sort=True,
         )
 
         rewards = torch.randn(batch_size, n, requires_grad=True)
         logp = torch.randn(batch_size, n, requires_grad=True)
 
-        expected_weights = subloo_weights(rewards, k, stable_sort=True)
+        expected_weights = subloo_weights(rewards, k, stable_sort=True, min_gap_scale=0.0)
         expected_loss = -(expected_weights.detach() * logp).sum(dim=-1).mean()
 
         out: dict = {}
@@ -165,6 +169,7 @@ class TestMaxKPOMOLoss:
             num_starts=n,
             k=k,
             variance_reduction="none",
+            weight_normalization="none",  # Disable normalization for exact match
             stable_sort=True,
             reward_scale=scale,
         )
@@ -192,6 +197,7 @@ class TestMaxKPOMOLoss:
             num_starts=n,
             k=k,
             variance_reduction="none",
+            weight_normalization="none",  # Disable normalization for exact match
             stable_sort=True,
             debug_clamp_weights=clamp,
         )
