@@ -1,0 +1,7 @@
+run_name,num_loc,algorithm,train_seed,eval_method,k_eval,avg_cost
+tsp50_pomo_n64_seed0,50,pomo,0,greedy,,5.962126731872559
+tsp50_pomo_n64_seed0,50,pomo,0,sampling,128,5.758387088775635
+tsp50_leader_alpha0p5_n64_seed0,50,leader_reward,0,greedy,,6.21914529800415
+tsp50_leader_alpha0p5_n64_seed0,50,leader_reward,0,sampling,128,5.793635845184326
+tsp50_maxk_k8_hybrid_n64_seed0,50,maxk_pomo,0,greedy,,6.2085700035095215
+tsp50_maxk_k8_hybrid_n64_seed0,50,maxk_pomo,0,sampling,128,5.793176651000977

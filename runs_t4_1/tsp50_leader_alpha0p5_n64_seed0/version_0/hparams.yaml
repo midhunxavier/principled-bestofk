@@ -1,0 +1,36 @@
+policy_kwargs: {}
+baseline: shared
+num_augment: 1
+augment_fn: dihedral8
+first_aug_identity: true
+feats: null
+num_starts: 64
+batch_size: 128
+val_batch_size: 128
+test_batch_size: 128
+train_data_size: 20000
+val_data_size: 2000
+test_data_size: 2000
+data_dir: /content/drive/MyDrive/Colab_Notebooks/BestofK_V3/runs_t4_1/data
+generate_default_data: false
+optimizer_kwargs:
+  lr: 0.0001
+reward_scale: null
+alpha: 0.5
+bonus: max_minus_mean
+check_numerics: false
+debug_clamp_weights: null
+optimizer: Adam
+lr_scheduler: null
+lr_scheduler_kwargs:
+  milestones:
+  - 80
+  - 95
+  gamma: 0.1
+lr_scheduler_interval: epoch
+lr_scheduler_monitor: val/reward
+shuffle_train_dataloader: false
+dataloader_num_workers: 0
+log_on_step: true
+metrics: {}
+baseline_kwargs: {}
