@@ -29,6 +29,7 @@ Note:
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 import pickle
@@ -244,19 +245,24 @@ def load_model(cfg: EvalConfig, env):
     try:
         from torch.serialization import safe_globals
         from rl4co.envs.routing.tsp.env import TSPEnv
+
         ctx = safe_globals([TSPEnv])
     except (ImportError, AttributeError):
         from contextlib import nullcontext
+
         ctx = nullcontext()
 
     with ctx:
-        return ModelCls.load_from_checkpoint(
-            cfg.ckpt_path,
-            env=env,
-            map_location=device,
-            weights_only=False,
-            **load_kwargs,
-        )
+        load_fn = ModelCls.load_from_checkpoint
+        try:
+            signature = inspect.signature(load_fn)
+        except (TypeError, ValueError):  # pragma: no cover
+            signature = None
+
+        common_kwargs = {"env": env, "map_location": device, **load_kwargs}
+        if signature is not None and "weights_only" in signature.parameters:
+            return load_fn(cfg.ckpt_path, weights_only=False, **common_kwargs)
+        return load_fn(cfg.ckpt_path, **common_kwargs)
 
 
 def _as_float(value: Any) -> float:

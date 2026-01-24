@@ -1,0 +1,53 @@
+{
+  "config": {
+    "algorithm": "maxk_pomo",
+    "batch_size": 32,
+    "ckpt_path": "docs/Tasks/Task4/Analysis-2/runs_t4_1/tsp50_maxk_k8_hybrid_n64_seed0/checkpoints/last.ckpt",
+    "device": "cpu",
+    "num_instances": 64,
+    "num_loc": 50,
+    "num_replicates": 4,
+    "problem": "tsp",
+    "save_path": "docs/Tasks/Task4/Analysis-2/artifacts_t4_1/diag/tsp50_maxk_seed0.json",
+    "seed": 1234
+  },
+  "metrics": {
+    "ess_mean": 1.554395116649108e-14,
+    "ess_std": 1.4263516808097021e-15,
+    "grad_norm_mean": 563.818161323448,
+    "grad_norm_std": 57.16050737431094,
+    "grad_proj_mean": 261.10232854016306,
+    "grad_proj_std": 431.6289033669189,
+    "wall_time_sec": 3.857977867126465,
+    "weights_abs_max_mean": 2.868261218070984,
+    "weights_abs_max_std": 0.04537354470161009
+  },
+  "per_replicate": {
+    "ess_mean": [
+      1.6681983553324016e-14,
+      1.6499151491659175e-14,
+      1.3129932254288268e-14,
+      1.586473736669286e-14
+    ],
+    "grad_norm": [
+      497.907880471131,
+      520.8842489967986,
+      640.1295163409919,
+      596.35099948487
+    ],
+    "grad_proj": [
+      224.13094510362134,
+      409.51569987941116,
+      803.5497768220864,
+      -392.78710764446663
+    ],
+    "weights_abs_max_mean": [
+      2.8068718910217285,
+      2.9105300903320312,
+      2.9131550788879395,
+      2.8424878120422363
+    ]
+  },
+  "schema_version": 1,
+  "timestamp": "2026-01-23T17:00:18Z"
+}

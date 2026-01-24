@@ -45,6 +45,45 @@
       "num_starts": 64,
       "run_name": "tsp50_maxk_k8_hybrid_n64_seed0",
       "seed": 0
+    },
+    {
+      "algorithm": "pomo",
+      "leader_alpha": 0.5,
+      "maxk_hybrid_lambda": 0.5,
+      "maxk_k": 8,
+      "maxk_min_gap_scale": 0.01,
+      "maxk_variance_reduction": "hybrid",
+      "maxk_weight_normalization": "zscore",
+      "num_loc": 50,
+      "num_starts": 64,
+      "run_name": "tsp50_pomo_n64_seed1",
+      "seed": 1
+    },
+    {
+      "algorithm": "leader_reward",
+      "leader_alpha": 0.5,
+      "maxk_hybrid_lambda": 0.5,
+      "maxk_k": 8,
+      "maxk_min_gap_scale": 0.01,
+      "maxk_variance_reduction": "hybrid",
+      "maxk_weight_normalization": "zscore",
+      "num_loc": 50,
+      "num_starts": 64,
+      "run_name": "tsp50_leader_alpha0p5_n64_seed1",
+      "seed": 1
+    },
+    {
+      "algorithm": "maxk_pomo",
+      "leader_alpha": 0.5,
+      "maxk_hybrid_lambda": 0.5,
+      "maxk_k": 8,
+      "maxk_min_gap_scale": 0.01,
+      "maxk_variance_reduction": "hybrid",
+      "maxk_weight_normalization": "zscore",
+      "num_loc": 50,
+      "num_starts": 64,
+      "run_name": "tsp50_maxk_k8_hybrid_n64_seed1",
+      "seed": 1
     }
   ],
   "schema_version": 1,

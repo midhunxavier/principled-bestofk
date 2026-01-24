@@ -5,3 +5,9 @@ tsp50_leader_alpha0p5_n64_seed0,50,leader_reward,0,greedy,,6.21914529800415
 tsp50_leader_alpha0p5_n64_seed0,50,leader_reward,0,sampling,128,5.793635845184326
 tsp50_maxk_k8_hybrid_n64_seed0,50,maxk_pomo,0,greedy,,6.2085700035095215
 tsp50_maxk_k8_hybrid_n64_seed0,50,maxk_pomo,0,sampling,128,5.793176651000977
+tsp50_pomo_n64_seed1,50,pomo,1,greedy,,6.008591175079346
+tsp50_pomo_n64_seed1,50,pomo,1,sampling,128,5.786957263946533
+tsp50_leader_alpha0p5_n64_seed1,50,leader_reward,1,greedy,,6.070676326751709
+tsp50_leader_alpha0p5_n64_seed1,50,leader_reward,1,sampling,128,5.780533313751221
+tsp50_maxk_k8_hybrid_n64_seed1,50,maxk_pomo,1,greedy,,6.211465358734131
+tsp50_maxk_k8_hybrid_n64_seed1,50,maxk_pomo,1,sampling,128,5.862280368804932

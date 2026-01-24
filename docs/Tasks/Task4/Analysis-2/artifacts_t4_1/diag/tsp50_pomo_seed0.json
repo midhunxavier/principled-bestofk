@@ -1,0 +1,53 @@
+{
+  "config": {
+    "algorithm": "pomo",
+    "batch_size": 32,
+    "ckpt_path": "docs/Tasks/Task4/Analysis-2/runs_t4_1/tsp50_pomo_n64_seed0/checkpoints/last.ckpt",
+    "device": "cpu",
+    "num_instances": 64,
+    "num_loc": 50,
+    "num_replicates": 4,
+    "problem": "tsp",
+    "save_path": "docs/Tasks/Task4/Analysis-2/artifacts_t4_1/diag/tsp50_pomo_seed0.json",
+    "seed": 1234
+  },
+  "metrics": {
+    "ess_mean": 2.5348139212622023e-10,
+    "ess_std": 4.853450595662625e-11,
+    "grad_norm_mean": 2.1993255472567634,
+    "grad_norm_std": 0.1709090674464674,
+    "grad_proj_mean": -1.3707730745852675,
+    "grad_proj_std": 0.9977136769044395,
+    "wall_time_sec": 6.926044940948486,
+    "weights_abs_max_mean": 0.6768835633993149,
+    "weights_abs_max_std": 0.04338973952198676
+  },
+  "per_replicate": {
+    "ess_mean": [
+      2.510164853752883e-10,
+      2.2859357462490237e-10,
+      2.022623457609285e-10,
+      3.3205316274376173e-10
+    ],
+    "grad_norm": [
+      2.3863239540431187,
+      1.9336044253742124,
+      2.3025809015904333,
+      2.1747929080192883
+    ],
+    "grad_proj": [
+      -2.305399545502179,
+      -0.11370276737663976,
+      -0.6729277913017937,
+      -2.3910621941604586
+    ],
+    "weights_abs_max_mean": [
+      0.6753128170967102,
+      0.6177092790603638,
+      0.7402836084365845,
+      0.6742285490036011
+    ]
+  },
+  "schema_version": 1,
+  "timestamp": "2026-01-23T16:59:27Z"
+}
